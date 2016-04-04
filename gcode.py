@@ -1,39 +1,34 @@
-import re, sys, warnings
+import re, sys
 
 class Line(object):
-	def __init__(self, line='', code=None, args={}):
+	def __init__(self, line):
 		"""Parse a single line of gcode into its code and named
 		arguments."""
-		self.line    = line
-		self.comment = None
+		self.line = line
 
-		if args or code:
-			if not (args and code):
-				raise ValueError("Both code and args must be specified")
-			self.code = code
-			self.args = args
+		#Extract the comment if there is one
+		lc = self.line.split(';', 1)
+		if len(lc) > 1:
+			self.line, self.comment = lc
 		else:
-			#Extract the comment if there is one
-			lc = self.line.split(';', 1)
-			if len(lc) > 1:
-				self.line, self.comment = lc
+			self.comment = None
 
-			#Get the actual code and the arguments
-			args = self.line.split()
-			self.code = args[0]
-			self.args = {}
-			if self.code == 'M117':
-				self.args[None] = self.line.split(None, 1)[1]
-			else:
-				for arg in args[1:]:
-					if re.match('[A-Za-z]', arg[0]):
-						try:
-							self.args[arg[0]] = float(arg[1:]) if '.' in arg[1:] else int(arg[1:])
-						except ValueError:
-							sys.stderr.write("Line: %s\n" % line)
-							raise
-					else:
-						self.args[None] = arg
+		#Get the actual code and the arguments
+		args = self.line.split()
+		self.code = args[0]
+		self.args = {}
+		if self.code == 'M117':
+			self.args[None] = self.line.split(None, 1)[1]
+		else:
+			for arg in args[1:]:
+				if re.match('[A-Za-z]', arg[0]):
+					try:
+						self.args[arg[0]] = float(arg[1:]) if '.' in arg[1:] else int(arg[1:])
+					except ValueError:
+						sys.stderr.write("Line: %s\n" % line)
+						raise
+				else:
+					self.args[None] = arg
 
 
 	def __repr__(self):
@@ -45,7 +40,7 @@ class Line(object):
 		"""Construct and return a line of gcode based on self.code and
 		self.args."""
 		return ' '.join([self.code] + ['%s%s' % (k if k else '', v) for k,v in
-			self.args.iteritems()]) + (' ;%s' % self.comment if self.comment else '')
+			self.args.items()]) + (' ;%s' % self.comment if self.comment else '')
 
 
 
@@ -59,25 +54,8 @@ class Layer(object):
 
 
 	def __repr__(self):
-		return '<Layer %s at Z=%s; corners: (%d, %d), (%d, %d); %d lines>' % (
-				(self.layernum, self.z()) + self.extents() + (len(self.lines),))
-
-
-	def extents(self):
-		"""Return the extents of the layer: the min/max in x and y that
-		occur. Note this does not take arcs into account."""
-		min_x = min(self.lines, key=lambda l: l.args.get('X', float('inf'))).args['X']
-		min_y = min(self.lines, key=lambda l: l.args.get('Y', float('inf'))).args['Y']
-		max_x = max(self.lines, key=lambda l: l.args.get('X', float('-inf'))).args['X']
-		max_y = max(self.lines, key=lambda l: l.args.get('Y', float('-inf'))).args['Y']
-		return min_x, min_y, max_x, max_y
-
-
-	def extents_gcode(self):
-		"""Return two Lines of gcode that move to the extents."""
-		min_x, min_y, max_x, max_y = self.extents()
-		return Line(code='G0', args={'X': min_x, 'Y': min_y}),\
-					 Line(code='G0', args={'X': max_x, 'Y': max_y})
+		return '<Layer %s at Z=%s, %d lines>' % (self.layernum, self.z(),
+				len(self.lines))
 
 
 	def z(self):
@@ -129,17 +107,15 @@ class Layer(object):
 				+ self.postamble)
 
 
+		
+
 
 class Gcode(object):
-	def __init__(self, filename=None, filestring=''):
+	def __init__(self, filestring):
 		"""Parse a file's worth of gcode passed as a string. Example:
 		  g = Gcode(open('mycode.gcode').read())"""
 		self.preamble = None
 		self.layers   = []
-		if filename:
-			if filestring:
-				warnings.warn("Ignoring passed filestring in favor of loading file.")
-			filestring = open(filename).read()
 		self.parse(filestring)
 
 
@@ -147,19 +123,14 @@ class Gcode(object):
 		return '<Gcode with %d layers>' % len(self.layers)
 
 
-	def construct(self, outfile=None):
-		"""Construct all and return of the gcode. If outfile is given,
-		write the gcode to the file instead of returning it."""
+	def construct(self):
+		"""Construct and return all of the gcode."""
 		s = (self.preamble.construct() + '\n') if self.preamble else ''
 		for i,layer in enumerate(self.layers):
 			s += ';LAYER:%d\n' % i
 			s += layer.construct()
 			s += '\n'
-		if outfile:
-			with open(outfile, 'w') as f:
-				f.write(s)
-		else:
-			return s
+		return s
 
 
 	def shift(self, layernum=0, **kwargs):
@@ -179,9 +150,6 @@ class Gcode(object):
 
 	def parse(self, filestring):
 		"""Parse the gcode."""
-		if not filestring:
-			return
-
 		in_preamble = True
 
 		#Cura nicely adds a "LAYER" comment just before each layer
