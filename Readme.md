@@ -1,11 +1,11 @@
-#Python gcode parser
+# Python gcode parser
 Some simple code to parse and manipulate gcode. It parses a gcode file
 into layers (based either on Cura's "LAYER:0" comments or on changes
 in Z) and allows manipulations such as shifting.
 
-##Example
+## Example
 
-###Input file
+### Input file
 
 ```gcode
 M190 S70.000000
@@ -27,7 +27,7 @@ G0 F9000 X153.400 Y141.900 Z0.700
 G1 F2100 X144.600 Y141.900 E11.98867
 ```
 
-###Example usage
+### Example usage
 ```python
 >>> import gcode
 >>> g = gcode.Gcode('/Users/dlaics/r/fabric/test.gcode')

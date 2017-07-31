@@ -195,8 +195,8 @@ class Gcode(object):
 
 		in_preamble = True
 
-		#Cura nicely adds a "LAYER" comment just before each layer
-		if ';LAYER:' in filestring:
+		#Cura and Simplify3D nicely add a "LAYER" comment just before each layer
+		if re.search(';\s*layer', filestring, re.I): in filestring:
 			#Split into layers
 			splits = re.split(r'^;LAYER:\d+\n', filestring, flags=re.M)
 			self.preamble = Layer(splits[0].split('\n'), layernum=0)
