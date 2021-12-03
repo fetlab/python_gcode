@@ -57,13 +57,18 @@ class Layer():
 					 Line(code='G0', args={'X': max_x, 'Y': max_y})
 
 
+	@property
 	def z(self):
 		"""Return the first Z height found for this layer. It should be
 		the only Z unless it's been messed with, so returning the first is
 		safe."""
-		for l in self.lines:
-			if 'Z' in l.args:
-				return l.args['Z']
+		try:
+			return self._z
+		except AttributError:
+			for l in self.lines:
+				if 'Z' in l.args:
+					self._z = l.args['Z']
+					return self._z
 
 
 	def set_preamble(self, gcodestr):

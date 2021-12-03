@@ -27,23 +27,35 @@ from util import listsplit
 #   ;MESH:NONMESH
 #   ;TYPE:SKIRT
 
-class Cura4:
-	@classmethod
-	def detect(cls, lines):
-		return any('Cura_SteamEngine' in l for l in lines[:20])
+__name__ = "Cura4"
+
+def detect(lines):
+	return any('Cura_SteamEngine' in l for l in lines[:20])
 
 
-	#Convention is that preamble "layer" is -1, first print layer is 0
-	@classmethod
-	def parse(cls, lines):
-		"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
-		layergroups = listsplit(
-				[Line(l, lineno=n) for n,l in enumerate(lines)],
-				lambda i: i.line.startswith(';LAYER:'))
+#Convention is that preamble "layer" is -1, first print layer is 0
+def parse(lines):
+	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
+	glines = [Line(l, lineno=n) for n,l in enumerate(lines)]
+	preamble, glines = listsplit(glines, lambda l: l.line.startswith(';LAYER:'),
+			maxsplit=1, keepsep='>')
+	layergroups = [Layer(layer) for layer in
+			listsplit(glines, lambda i: i.line.startswith(''), keepsep='>')]
 
-		return Layer(layergroups[0], layernum='preamble'), [
-				Layer(layergroup, layernum=i) for i,layergroup in enumerate(layergroups[1:])]
+	preamble = Layer(preamble, layernum='preamble')
+	preamble.info = {}
+	for line in preamble.lines:
+		if line.line[0] == ';' and ':' in line.line[0]:
+			key, val = line.line[1:].split(':', maxsplit=1)
+			preamble.info[key] = val
 
+	#The first line in each layer will be ";LAYER:N" because that's what we split on
+	for layer in layergroups[1:]:
+		try:
+			layer.layernum = int(layer.lines[0].line[1:].split(':')[1])
+		except IndexError:
+			print(layer.lines[0])
+			raise
 
-
-PARSERS = [Cura4]
+	return preamble, [
+			Layer(layergroup, layernum=i) for i,layergroup in enumerate(layergroups[1:])]

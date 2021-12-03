@@ -3,9 +3,6 @@ import parsers
 from enum import Enum
 from gclayer import Layer
 
-# Constants
-Slicers = Enum('Slicers', 'PRUSA SIMPLIFY3D CURA15 CURA4')
-
 
 class GcodeFile():
 	def __init__(self, filename=None, filestring='', layer_class=Layer):
@@ -63,10 +60,7 @@ class GcodeFile():
 		if not self.filelines:
 			return
 
-		parser = next((p for p in parsers.PARSERS if p.detect(self.filelines)), None)
-		if parser is None:
-			raise ValueError("No parser matched")
-
+		parser = parsers.find_parser(self.filelines)
 		self.preamble, self.layers = parser.parse(self.filelines)
 
 
