@@ -27,3 +27,26 @@ def listsplit(l, sep, maxsplit=-1, keepsep='>'):
 	if a:
 		r.append(a)
 	return r
+
+
+def listsplit2(l, sep, maxsplit=-1, keepsep='>'):
+	r = []
+	start = 0
+	end   = None
+	for i,e in enumerate(l):
+		if sep(e):
+			end = i
+			if keepsep == '<':
+				end += 1
+			r.append(l[start:end])
+			if maxsplit > -1 and len(r) >= maxsplit:
+				r.append(l[end:])
+				end = None
+				break
+			start = end + 1
+			end = None
+		else:
+			end = i
+	if end:
+		r.append(l[start:end+1])
+	return r

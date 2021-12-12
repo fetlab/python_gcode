@@ -29,6 +29,15 @@ from util import listsplit
 
 __name__ = "Cura4"
 
+class Cura4Layer(Layer):
+	"""A Layer, but using the comments in the Cura gcode to add additional useful
+	members:
+		Layer.meshes -> a list of sub-meshes to be found in this layer
+			each containing
+				.features -> a dict of lines by feature type
+	"""
+	pass
+
 def detect(lines):
 	return any('Cura_SteamEngine' in l for l in lines[:20])
 
