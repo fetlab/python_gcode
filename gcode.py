@@ -64,6 +64,12 @@ class GcodeFile():
 		self.preamble, self.layers = parser.parse(self.filelines)
 
 
+def test():
+	try:
+		g = GcodeFile('example_gcode/cubex2-cura_4.12.1.gcode')
+	except Exception as e:
+		return e.args[0]
+	return g
 
 
 if __name__ == "__main__":

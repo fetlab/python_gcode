@@ -11,12 +11,9 @@ class Layer():
 	def __repr__(self):
 		#If this layer contains some X/Y moves, print the extents
 		if any(l for l in self.lines if 'X' in l.args and 'Y' in l.args):
-			ex1, ex2 = self.extents()
-			return '<Layer %s at Z=%s; corners: (%d, %d), (%d, %d); %d lines>' % (
-					(self.layernum, self.z()) + ex1 + ex2 + (len(self.lines),))
+			return f'<Layer {self.layernum} at Z={self.z}; corners: {self.extents()}; {len(self.lines)} lines>' 
 		#Otherwise don't!
-		return '<Layer {} at Z={}; {} lines; no moves>'.format(
-				self.layernum, self.z(), len(self.lines))
+		return f'<Layer {self.layernum} at Z={self.z}; {len(self.lines)} lines; no moves>'
 
 
 	def lineno(self, number):
@@ -64,7 +61,7 @@ class Layer():
 		safe."""
 		try:
 			return self._z
-		except AttributError:
+		except AttributeError:
 			for l in self.lines:
 				if 'Z' in l.args:
 					self._z = l.args['Z']

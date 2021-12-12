@@ -35,8 +35,16 @@ class Cura4Layer(Layer):
 		Layer.meshes -> a list of sub-meshes to be found in this layer
 			each containing
 				.features -> a dict of lines by feature type
+
+	Cura Gcode as of 4.12.1 has the same pattern every layer except layer 0.
 	"""
-	pass
+	def __init__(self, lines=[], layernum=None):
+		if layernum > 0:
+			self.parts = listsplit(lines,
+					lambda l: l.line.startswith(';TYPE:') or l.line.startswith(';MESH'),
+					keepsep='>', minsize=2)
+		
+	
 
 def detect(lines):
 	return any('Cura_SteamEngine' in l for l in lines[:20])
@@ -45,11 +53,11 @@ def detect(lines):
 #Convention is that preamble "layer" is -1, first print layer is 0
 def parse(lines):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
-	glines = [Line(l, lineno=n) for n,l in enumerate(lines)]
+	glines = [Line(l, lineno=n+1) for n,l in enumerate(lines)]
 	preamble, glines = listsplit(glines, lambda l: l.line.startswith(';LAYER:'),
 			maxsplit=1, keepsep='>')
 	layergroups = [Layer(layer) for layer in
-			listsplit(glines, lambda i: i.line.startswith(''), keepsep='>')]
+			listsplit(glines, lambda i: i.line.startswith(';LAYER:'), keepsep='>')]
 
 	preamble = Layer(preamble, layernum='preamble')
 	preamble.info = {}
@@ -59,12 +67,11 @@ def parse(lines):
 			preamble.info[key] = val
 
 	#The first line in each layer will be ";LAYER:N" because that's what we split on
-	for layer in layergroups[1:]:
+	for i,layer in enumerate(layergroups):
 		try:
 			layer.layernum = int(layer.lines[0].line[1:].split(':')[1])
 		except IndexError:
-			print(layer.lines[0])
-			raise
+			print(f'Layer {i+1} line 0 did not start with ";LAYER:": {layer.lines[0]}')
+			raise Exception(layergroups)
 
-	return preamble, [
-			Layer(layergroup, layernum=i) for i,layergroup in enumerate(layergroups[1:])]
+	return preamble, layergroups
