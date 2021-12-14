@@ -61,6 +61,11 @@ class Line():
 		return self.code in ('G0', 'G1') and ('X' in self.args or 'Y' in self.args)
 
 
+	def is_xyextrude(self):
+		"""Return True if it's an extruding move in the X/Y plane, else False."""
+		return self.code in ('G0', 'G1') and ('X' in self.args or 'Y' in self.args) and 'E' in self.args
+
+
 	def construct(self):
 		"""Construct and return a line of gcode based on self.code,
 		self.args, and self.comment."""
