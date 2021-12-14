@@ -11,7 +11,7 @@ class Layer():
 	def __repr__(self):
 		#If this layer contains some X/Y moves, print the extents
 		if any(l for l in self.lines if 'X' in l.args and 'Y' in l.args):
-			return f'<Layer {self.layernum} at Z={self.z}; corners: {self.extents()}; {len(self.lines)} lines>' 
+			return f'<Layer {self.layernum} at Z={self.z}; corners: {self.extents()}; {len(self.lines)} lines>'
 		#Otherwise don't!
 		return f'<Layer {self.layernum} at Z={self.z}; {len(self.lines)} lines; no moves>'
 
@@ -29,7 +29,7 @@ class Layer():
 		max_x = max(self.lines, key=lambda l: l.args.get('X', float('-inf'))).args['X']
 		max_y = max(self.lines, key=lambda l: l.args.get('Y', float('-inf'))).args['Y']
 		return (min_x, min_y), (max_x, max_y)
-	
+
 
 	def last_coord(self):
 		"""Return the last coordinate moved to."""
