@@ -43,8 +43,8 @@ class Cura4Layer(Layer):
 			self.parts = listsplit(lines,
 					lambda l: l.line.startswith(';TYPE:') or l.line.startswith(';MESH'),
 					keepsep='>', minsize=2)
-		
-	
+
+
 
 def detect(lines):
 	return any('Cura_SteamEngine' in l for l in lines[:20])

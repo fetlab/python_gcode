@@ -53,7 +53,7 @@ class Line():
 
 	def __repr__(self):
 		r = '[{}] '.format(self.lineno) if self.lineno else ''
-		return r + self.construct() 
+		return r + self.construct()
 
 
 	def is_xymove(self):
