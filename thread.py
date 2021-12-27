@@ -1,16 +1,19 @@
 import gcode
-from Geometry3D import Point, Segment
+from Geometry3D import Point, Segment, Plane, Vector
 
-def layers_to_geom(layers):
-	"""Add a .geometry member to each layer with line segments. Assumes absolute
-	positioning (G90)."""
+def layers_to_geom(g, layer_height=None):
+	"""Add a .geometry member to each layer of GcodeFile g. Assumes absolute
+	positioning (G90). If g.preamble doesn't have a 'Layer height' entry, provide
+	layer_height."""
 	last = None
-	for layer in layers:
-		layer.geometry = []
+	for layer in g.layers:
+		if not layer.has_moves:
+			continue
+		layer.geometry = {'segments': [], 'plane': None}
 		for line in layer.lines:
 			if line.is_xyextrude():
 				try:
-					layer.geometry.append(Segment(
+					layer.geometry['segments'].append(Segment(
 							Point(last.args['X'], last.args['Y'], layer.z),
 							Point(line.args['X'], line.args['Y'], layer.z)))
 				except AttributeError:
@@ -18,6 +21,20 @@ def layers_to_geom(layers):
 					raise
 			if line.is_xymove():
 				last = line
+
+		#Construct two planes at the top and bottom of the layer, based on the
+		# layer height
+		if not layer_height:
+			layer_height = float(g.preamble.info['Layer height'])
+
+		(min_x, min_y), (max_x, max_y) = layer.extents()
+		mid_x = min_x + .5 * (max_x - min_x)
+		z = layer.z
+
+		plane_points = [(min_x, min_y), (mid_x, max_y), (max_x, max_y)]
+		layer.geometry['planes'] = [
+				Plane(*[Point(p[0], p[1], z - layer_height/2) for p in plane_points]),
+				Plane(*[Point(p[0], p[1], z + layer_height/2) for p in plane_points])]
 
 
 def intersect_layers(start, end, layers, extrusion_width=0.4):
@@ -57,7 +74,7 @@ def plot_test():
 	ax = plt.figure().add_subplot(projection='3d')
 
 	z = g.layers[53].z
-	for s in g.layers[53].geometry:
+	for s in g.layers[53].geometry['segments']:
 			ax.plot([s.start_point.x, s.end_point.x], [s.start_point.y, s.end_point.y], [s.start_point.z, s.end_point.z], 'g', lw=1)
 	for s,e in tpath:
 			ax.plot([s[0], e[0]], [s[1], e[1]], [s[2], e[2]], 'r', lw=1)

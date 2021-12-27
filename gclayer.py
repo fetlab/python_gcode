@@ -6,11 +6,11 @@ class Layer():
 		self.preamble  = []
 		self.lines     = lines
 		self.postamble = []
-
+		self.has_moves = any(l for l in self.lines if 'X' in l.args and 'Y' in l.args)
 
 	def __repr__(self):
 		#If this layer contains some X/Y moves, print the extents
-		if any(l for l in self.lines if 'X' in l.args and 'Y' in l.args):
+		if self.has_moves:
 			return f'<Layer {self.layernum} at Z={self.z}; corners: {self.extents()}; {len(self.lines)} lines>'
 		#Otherwise don't!
 		return f'<Layer {self.layernum} at Z={self.z}; {len(self.lines)} lines; no moves>'
@@ -24,10 +24,16 @@ class Layer():
 	def extents(self):
 		"""Return the extents of the layer: the min/max in x and y that
 		occur. Note this does not take arcs into account."""
-		min_x = min(self.lines, key=lambda l: l.args.get('X', float('inf'))).args['X']
-		min_y = min(self.lines, key=lambda l: l.args.get('Y', float('inf'))).args['Y']
-		max_x = max(self.lines, key=lambda l: l.args.get('X', float('-inf'))).args['X']
-		max_y = max(self.lines, key=lambda l: l.args.get('Y', float('-inf'))).args['Y']
+		if not self.has_moves:
+			raise ValueError(f'No moves in {self}')
+		try:
+			min_x = min(self.lines, key=lambda l: l.args.get('X', float('inf'))).args['X']
+			min_y = min(self.lines, key=lambda l: l.args.get('Y', float('inf'))).args['Y']
+			max_x = max(self.lines, key=lambda l: l.args.get('X', float('-inf'))).args['X']
+			max_y = max(self.lines, key=lambda l: l.args.get('Y', float('-inf'))).args['Y']
+		except:
+			print(f'Error on layer {self.layernum}')
+			raise
 		return (min_x, min_y), (max_x, max_y)
 
 

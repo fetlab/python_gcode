@@ -54,15 +54,21 @@ def detect(lines):
 def parse(lines):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
 	glines = [Line(l, lineno=n+1) for n,l in enumerate(lines)]
-	preamble, glines = listsplit(glines, lambda l: l.line.startswith(';LAYER:'),
+	preamble, glines = listsplit(glines, lambda l: l.line.startswith(';LAYER:0'),
 			maxsplit=1, keepsep='>')
+	postamble, glines = listsplit(reversed(glines), lambda l: l.line.startswith(';TIME_ELAPSED'),
+			maxsplit=1, keepsep='>')
+	postamble.reverse()
+	glines.reverse()
 	layergroups = [Layer(layer) for layer in
 			listsplit(glines, lambda i: i.line.startswith(';LAYER:'), keepsep='>')]
 
-	preamble = Layer(preamble, layernum='preamble')
+	#WARNING: not returning postamble!
+	postamble = Layer(postamble, layernum='postamble')
+	preamble  = Layer(preamble, layernum='preamble')
 	preamble.info = {}
 	for line in preamble.lines:
-		if line.line[0] == ';' and ':' in line.line[0]:
+		if line.line.startswith(';') and ':' in line.line:
 			key, val = line.line[1:].split(':', maxsplit=1)
 			preamble.info[key] = val
 
