@@ -1,6 +1,12 @@
 import gcode
 from Geometry3D import Point, Segment, Plane, Vector
 
+class GCodeException(Exception):
+	def __init__(self, obj, message):
+		self.obj = obj
+		self.message = message
+
+
 def layers_to_geom(g, layer_height=None):
 	"""Add a .geometry member to each layer of GcodeFile g. Assumes absolute
 	positioning (G90). If g.preamble doesn't have a 'Layer height' entry, provide
@@ -16,14 +22,13 @@ def layers_to_geom(g, layer_height=None):
 					layer.geometry['segments'].append(Segment(
 							Point(last.args['X'], last.args['Y'], layer.z),
 							Point(line.args['X'], line.args['Y'], layer.z)))
-				except AttributeError:
-					print(f'Segment {line.lineno}: {line}')
-					raise
+				except (AttributeError, TypeError) as e:
+					raise GCodeException((layer,last), f'Segment {line.lineno}: {line}') from e
 			if line.is_xymove():
 				last = line
 
 		#Construct two planes at the top and bottom of the layer, based on the
-		# layer height
+		# layer height -> unncessary, just need one at the layer height
 		if not layer_height:
 			layer_height = float(g.preamble.info['Layer height'])
 
@@ -33,8 +38,9 @@ def layers_to_geom(g, layer_height=None):
 
 		plane_points = [(min_x, min_y), (mid_x, max_y), (max_x, max_y)]
 		layer.geometry['planes'] = [
-				Plane(*[Point(p[0], p[1], z - layer_height/2) for p in plane_points]),
-				Plane(*[Point(p[0], p[1], z + layer_height/2) for p in plane_points])]
+				#Plane(*[Point(p[0], p[1], z - layer_height/2) for p in plane_points]),
+				#Plane(*[Point(p[0], p[1], z + layer_height/2) for p in plane_points])]
+				Plane(*[Point(p[0], p[1], z) for p in plane_points])]
 
 
 def intersect_layers(start, end, layers, extrusion_width=0.4):
