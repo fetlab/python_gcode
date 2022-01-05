@@ -14,7 +14,6 @@
 # ---
 
 # %%
-# #%pylab
 import pickle
 import numpy as np
 import thread, gcode, gclayer
@@ -29,9 +28,10 @@ init_notebook_mode(connected=True)
 #suppress scientific notation
 np.set_printoptions(suppress=True, precision=2)
 
+
 # %%
 #turn off autosave since we sync from vim
-%autosave 0
+# %autosave 0
 
 # %%
 def page_wide():
@@ -98,7 +98,8 @@ def plot_layer(layer, thread_geom=[]):
 			mode='lines',
 			line={'color':'white', 'dash':'dot', 'width':3})))
 
-		for seg,enter,exit,gclines in thread.intersect_thread(thread_geom, layer):
+		intersections = thread.intersect_thread(thread_geom, layer)
+		for seg,enter,exit,gclines in intersections:
 			if enter and exit:
 				kwargs = xyz(enter, exit, mode='lines')
 			elif enter or exit:
@@ -126,9 +127,15 @@ def plot_layer(layer, thread_geom=[]):
 		)
 	fig.show('notebook')
 
+	return fig, intersections
+
 # %%
 page_wide()
-plot_layer(g.layers[49], thread_geom)
+fig, ii = plot_layer(g.layers[49], thread_geom)
+
+# %%
+# seg,enter,exit,gclines 
+fig.add_trace(go.Scatter3d(**seg_xyz(ii[0][0], *ii[0][3], mode='lines', line={'color':'red'})))
 
 # %%
 
