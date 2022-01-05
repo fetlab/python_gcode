@@ -1,5 +1,15 @@
 import gcode
-from Geometry3D import Point, Segment, Plane, Vector
+from copy import deepcopy
+from dataclasses import make_dataclass
+from Geometry3D import Point, Segment, Plane, Vector, intersection
+
+class GCodeException(Exception):
+	def __init__(self, obj, message):
+		self.obj = obj
+		self.message = message
+
+Geometry = make_dataclass('Geometry', ['segments', 'planes'])
+Planes   = make_dataclass('Planes',   ['top', 'bottom'])
 
 def layers_to_geom(g, layer_height=None):
 	"""Add a .geometry member to each layer of GcodeFile g. Assumes absolute
@@ -9,16 +19,15 @@ def layers_to_geom(g, layer_height=None):
 	for layer in g.layers:
 		if not layer.has_moves:
 			continue
-		layer.geometry = {'segments': [], 'plane': None}
+		layer.geometry = Geometry(segments=[], planes=[])
 		for line in layer.lines:
 			if line.is_xyextrude():
 				try:
-					layer.geometry['segments'].append(Segment(
+					layer.geometry.segments.append(Segment(
 							Point(last.args['X'], last.args['Y'], layer.z),
 							Point(line.args['X'], line.args['Y'], layer.z)))
-				except AttributeError:
-					print(f'Segment {line.lineno}: {line}')
-					raise
+				except (AttributeError, TypeError) as e:
+					raise GCodeException((layer,last), f'Segment {line.lineno}: {line}') from e
 			if line.is_xymove():
 				last = line
 
@@ -32,30 +41,58 @@ def layers_to_geom(g, layer_height=None):
 		z = layer.z
 
 		plane_points = [(min_x, min_y), (mid_x, max_y), (max_x, max_y)]
-		layer.geometry['planes'] = [
-				Plane(*[Point(p[0], p[1], z - layer_height/2) for p in plane_points]),
-				Plane(*[Point(p[0], p[1], z + layer_height/2) for p in plane_points])]
+		bot_z = z - layer_height/2
+		top_z = z + layer_height/2
+		bottom = Plane(*[Point(p[0], p[1], bot_z) for p in plane_points])
+		top    = Plane(*[Point(p[0], p[1], top_z) for p in plane_points])
+		bottom.z = bot_z
+		top.z    = top_z
+		layer.geometry.planes = Planes(bottom=bottom, top=top)
 
 
-def intersect_layers(start, end, layers, extrusion_width=0.4):
-	#Return layers where the line segment starts or ends inside the layer, or
-	# where the line segment starts before the layer and ends after the layer.
-	ll = []
-	layers = iter(layers)
+def intersection2d(seg1, seg2):
+	"""Discard the z information and return the intersection of two line
+	segments."""
+	return intersection(
+			Segment(
+				Point(seg1.start_point.x, seg1.start_point.y, 0),
+				Point(seg1.end_point.x,   seg1.end_point.y,   0)),
+			Segment(
+				Point(seg2.start_point.x, seg2.start_point.y, 0),
+				Point(seg2.end_point.x,   seg2.end_point.y,   0))
+	)
 
-	for layer in layers:
-		if start.z >= layer.z:
-			ll.append(layer)
-		else:
-			break
 
-	for layer in layers:
-		if end.z <= layer.z:
-			ll.append(layer)
-		else:
-			break
+def intersect_thread(th: [Segment], layer):
+	"""Given a list of thread geometry Segments th, return a list of thread
+	segments that are in the layer:
 
-	return ll
+		[thread Segment, entry_intersection, exit_intersection]
+
+	If entry_intersection (exit_) is None, the segment starts (ends) inside the
+	layer.
+	"""
+	segs = []
+
+	bottom = layer.geometry.planes.bottom
+	top    = layer.geometry.planes.top
+	for t in th:
+		#Is the segment entirely below or above the layer? If so, skip it.
+		if((t.start_point.z <  bottom.z and t.end_point.z <  bottom.z) or
+			 (t.start_point.z >= top.z   and  t.end_point.z >= top.z)):
+			continue
+
+		#See if the thread segment enters and/or exits the layer
+		enter = t.intersection(bottom)
+		exit  = t.intersection(top)
+
+		#And find the gCode lines the segment intersects with
+		gc_inter = [gcseg for gcseg in layer.geometry.segments
+				if intersection2d(t, gcseg)]
+
+		segs.append([t, enter, exit, gc_inter])
+
+	return segs
 
 
 def plot_test():
