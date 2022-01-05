@@ -14,6 +14,7 @@
 # ---
 
 # %%
+# Imports
 import pickle
 import numpy as np
 import thread, gcode, gclayer
@@ -84,7 +85,7 @@ def seg_xyz(*segs, **kwargs):
 
 # %%
 def plot_layer(layer, thread_geom=[]):
-	fig = go.Figure()
+	fig = go.FigureWidget()
 
 	fig.add_trace(go.Scatter3d(**seg_xyz(
 			*layer.geometry.segments,
@@ -121,37 +122,67 @@ def plot_layer(layer, thread_geom=[]):
 					line={'color':'yellow', 'width': 2},
 				)))
 
-	fig.update_layout(template='plotly_dark', autosize=False,
+	fig.update_layout(template='plotly_dark',# autosize=False,
 			scene_aspectmode='data',
 		width=750, height=750, margin=dict(l=0, r=20, b=0, t=0, pad=0),
 		)
-	fig.show('notebook')
+	#fig.show('notebook')
 
 	return fig, intersections
 
 # %%
 page_wide()
 fig, ii = plot_layer(g.layers[49], thread_geom)
+fig
 
 # %%
 # seg,enter,exit,gclines 
-fig.add_trace(go.Scatter3d(**seg_xyz(ii[0][0], *ii[0][3], mode='lines', line={'color':'red'})))
+fig.add_trace(go.Scatter3d(**seg_xyz(ii[0][0], *ii[0][3], mode='lines', line={'color':'red'})));
 
 # %%
+def plot_steps(layer, thread_geom):
+	gc_segs = set(layer.geometry.segments)
+	intersections = thread.intersect_thread(thread_geom, layer)
+	intersected_gc = set(i[3] for i in intersections)
+	gc_segs.difference_update(intersected_gc)
+	gc_segs = list(gc_segs)
 
-	"""
-	#Plot top/bottom planes for the layer
-	xx = list(filter(None, x)); yy = list(filter(None, y))
-	zz = g.layers[53].z - 0.2
-	fig.add_trace(go.Mesh3d(
-			x=[min(xx), min(xx), max(xx), max(xx)],
-			y=[min(yy), max(yy), max(yy), min(yy)],
-			z=[zz,		 zz,		 zz,		 zz],
-			opacity=.5))
-	zz = g.layers[53].z + 0.2
-	fig.add_trace(go.Mesh3d(
-			x=[min(xx), min(xx), max(xx), max(xx)],
-			y=[min(yy), max(yy), max(yy), min(yy)],
-			z=[zz,		 zz,		 zz,		 zz],
-			opacity=.5))
-"""
+	#First plot the gcode segments that no thread intersects,
+	# and assume the start_point of the first thread segment is the thread
+	# anchor point on the bed. Put the thread away from the model to begin with.
+	anchor = thread_geom[0].start_point
+	frames = [
+		[
+			go.Scatter2d(**seg_xyz(gc_segs, mode='lines', line_color='green')),
+			go.Scatter2d(**seg_xyz(Segment(anchor, Point(anchor.x, layer.extents[1][1], 0)),
+				mode='lines', line=dict(color='red', dash='dot', width=3)))
+		]
+	]
+
+	#Now generate the frames of the animation:
+	# 1. Rotate the thread from its current anchor point to overlap the gcode segment that
+	#    should capture it.
+	# 2. Draw the gcode segment that will capture it.
+	# 3. Store the new anchor point for the thread.
+	# Each frame should show updates of the previous.
+	for seg,enter,exit,gclines in intersections:
+		if not gclines:
+			continue
+
+		#The gcode segments that the thread segment intersects in this layer
+		gcode = go.Scatter2d(**gclines, mode='lines', line_color='green')
+
+		if enter and exit:
+			kwargs = xyz(enter, exit, mode='lines')
+		elif enter or exit:
+			point = enter or exit
+			kwargs = xyz(point, mode='markers')
+		else:
+			kwargs = xyz(seg.start_point, seg.end_point, mode='lines')
+
+		#The thread segment itself (either a line if captured or points if entering/exiting)
+		layer_thread = go.Scatter3d(
+			marker={'color':'yellow', 'size':4},
+			line={'color':'yellow', 'width':8},
+			**kwargs,
+		))
