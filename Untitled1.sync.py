@@ -147,17 +147,18 @@ def plot_steps(layer, thread_geom):
 	gc_segs.difference_update(intersected_gc)
 	gc_segs = list(gc_segs)
 
+	fig = go.FigureWidget()
+
 	#First plot the gcode segments that no thread intersects,
+	anchor = thread_geom[0].start_point
+	fig.add_trace(go.Scatter2d(**seg_xyz(gc_segs, mode='lines', line_color='green')))
 	# and assume the start_point of the first thread segment is the thread
 	# anchor point on the bed. Put the thread away from the model to begin with.
-	anchor = thread_geom[0].start_point
-	frames = [
-		[
-			go.Scatter2d(**seg_xyz(gc_segs, mode='lines', line_color='green')),
-			go.Scatter2d(**seg_xyz(Segment(anchor, Point(anchor.x, layer.extents[1][1], 0)),
-				mode='lines', line=dict(color='red', dash='dot', width=3)))
-		]
-	]
+	fig.add_trace(go.Scatter2d(**seg_xyz(
+		Segment(anchor, Point(anchor.x, layer.extents[1][1], 0)),
+		mode='lines', line=dict(color='red', dash='dot', width=3))))
+
+	yield fig
 
 	#Now generate the frames of the animation:
 	# 1. Rotate the thread from its current anchor point to overlap the gcode segment that
@@ -185,4 +186,10 @@ def plot_steps(layer, thread_geom):
 			marker={'color':'yellow', 'size':4},
 			line={'color':'yellow', 'width':8},
 			**kwargs,
-		))
+		)
+
+# %%
+ss = plot_steps(g.layers[53], thread_geom)
+
+# %%
+next(ss)
