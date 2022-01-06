@@ -73,6 +73,12 @@ def xyz(*args, **kwargs):
 	return dict(x=x, y=y, z=z, **kwargs)
 
 
+def xy(*segs, **kwargs):
+	d = xyz(*segs, **kwargs)
+	del(d['z'])
+	return d
+
+
 def seg_xyz(*segs, **kwargs):
 	#Plot gcode segments. The 'None' makes a break in a line so we can use
 	# just one add_trace() call.
@@ -82,6 +88,19 @@ def seg_xyz(*segs, **kwargs):
 		y.extend([s.start_point.y, s.end_point.y, None])
 		z.extend([s.start_point.z, s.end_point.z, None])
 	return dict(x=x, y=y, z=z, **kwargs)
+
+
+def seg_xy(*segs, **kwargs):
+	d = seg_xyz(*segs, **kwargs)
+	del(d['z'])
+	return d
+
+
+def fig_del_by_names(fig, *names):
+	"""Remove the trace with the name from the fig."""
+	fignames = set([d.name for d in fig.data])
+	fignames.difference_update(names)
+	fig.data = [d for d in fig.data if d.name in fignames]
 
 # %%
 def plot_layer(layer, thread_geom=[]):
@@ -141,22 +160,29 @@ fig.add_trace(go.Scatter3d(**seg_xyz(ii[0][0], *ii[0][3], mode='lines', line={'c
 
 # %%
 def plot_steps(layer, thread_geom):
+	#Separate the layer lines that do (intersected_gc) and don't (gc_segs)
+	# intersect the thread in this layer
 	gc_segs = set(layer.geometry.segments)
 	intersections = thread.intersect_thread(thread_geom, layer)
-	intersected_gc = set(i[3] for i in intersections)
+	intersected_gc = set(sum([i[3] for i in intersections], []))
 	gc_segs.difference_update(intersected_gc)
 	gc_segs = list(gc_segs)
 
 	fig = go.FigureWidget()
+	page_wide()
+	fig.update_layout(template='plotly_dark',# autosize=False,
+		width=750, margin=dict(l=0, r=20, b=0, t=0, pad=0),
+		)
 
 	#First plot the gcode segments that no thread intersects,
 	anchor = thread_geom[0].start_point
-	fig.add_trace(go.Scatter2d(**seg_xyz(gc_segs, mode='lines', line_color='green')))
+	fig.add_trace(go.Scatter(**seg_xy(
+		*gc_segs, name='gc_segs', mode='lines', line_color='green')))
 	# and assume the start_point of the first thread segment is the thread
 	# anchor point on the bed. Put the thread away from the model to begin with.
-	fig.add_trace(go.Scatter2d(**seg_xyz(
-		Segment(anchor, Point(anchor.x, layer.extents[1][1], 0)),
-		mode='lines', line=dict(color='red', dash='dot', width=3))))
+	fig.add_trace(go.Scatter(**seg_xy(
+		Segment(anchor, Point(anchor.x, layer.extents()[1][1], 0)),
+		name='th_traj', mode='lines', line=dict(color='red', dash='dot', width=3))))
 
 	yield fig
 
@@ -167,29 +193,64 @@ def plot_steps(layer, thread_geom):
 	# 3. Store the new anchor point for the thread.
 	# Each frame should show updates of the previous.
 	for seg,enter,exit,gclines in intersections:
-		if not gclines:
+		#If there's no intersection with layer geometry, just show the thread segment
+		if not (enter or exit or gclines):
+			layer_thread = go.Scatter(**seg_xy(seg,
+				name='th_traj', mode='lines', line={'color':'red', 'dash':'dot', 'width':3}))
+			fig_del_by_names(fig, 'th_traj')
+			fig.add_trace(layer_thread)
+			print('just layer thread')
+			yield fig
 			continue
 
-		#The gcode segments that the thread segment intersects in this layer
-		gcode = go.Scatter2d(**gclines, mode='lines', line_color='green')
-
-		if enter and exit:
-			kwargs = xyz(enter, exit, mode='lines')
-		elif enter or exit:
-			point = enter or exit
-			kwargs = xyz(point, mode='markers')
-		else:
-			kwargs = xyz(seg.start_point, seg.end_point, mode='lines')
+		#First, calculate all of the things we need to draw at this step
+		#---
+		
+		#The gcode segments that this thread segment intersects in this layer
+		isec_gcode = go.Scatter(**seg_xy(*gclines,
+			name='isec_gcode', mode='lines', line_color='yellow'))
 
 		#The thread segment itself (either a line if captured or points if entering/exiting)
-		layer_thread = go.Scatter3d(
+		if enter and exit:
+			point = enter
+			kwargs = xy(enter, exit, mode='lines')
+		elif enter or exit:
+			point = enter or exit
+			kwargs = xy(point, mode='markers')
+		else:
+			point = seg.start_point
+			kwargs = seg_xy(seg, mode='lines')
+		layer_thread = go.Scatter(
+			name='layer_thread',
 			marker={'color':'yellow', 'size':4},
 			line={'color':'yellow', 'width':8},
-			**kwargs,
-		)
+			**kwargs)
+
+		#The representation of the actual thread trajectory, from anchor to thread carrier
+		th_traj = go.Scatter(xy(anchor, point, name='th_traj', mode='lines',
+			line={'color':'white', 'dash':'dot', 'width':3}))
+
+		print('layer_thread')
+		fig.add_trace(layer_thread); yield fig
+		print('th_traj')
+		fig.add_trace(th_traj); yield fig
+		print('isec_gcode')
+		fig.add_trace(isec_gcode); yield fig
+
+		print('end of thread segment')
+		fig_del_by_names(fig, 'th_traj')
+		fig.update_traces(patch={'line_color':'green'},
+				selector={'name':'isec_gcode'}, overwrite=True)
+		yield fig
+
 
 # %%
-ss = plot_steps(g.layers[53], thread_geom)
+ss = plot_steps(g.layers[49], thread_geom)
+fig = next(ss)
+fig
 
 # %%
-next(ss)
+next(ss);
+
+# %%
+fig.data = [d for d in fig.data if d.name != 'anchor']

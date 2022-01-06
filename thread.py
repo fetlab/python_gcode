@@ -67,7 +67,7 @@ def intersect_thread(th: [Segment], layer):
 	"""Given a list of thread geometry Segments th, return a list of thread
 	segments that are in the layer:
 
-		[thread Segment, entry_intersection, exit_intersection]
+		[thread Segment, entry_intersection, exit_intersection, layer_intersections]
 
 	If entry_intersection (exit_) is None, the segment starts (ends) inside the
 	layer.
@@ -80,6 +80,7 @@ def intersect_thread(th: [Segment], layer):
 		#Is the segment entirely below or above the layer? If so, skip it.
 		if((t.start_point.z <  bottom.z and t.end_point.z <  bottom.z) or
 			 (t.start_point.z >= top.z   and  t.end_point.z >= top.z)):
+			segs.append([t, None, None, []])
 			continue
 
 		#See if the thread segment enters and/or exits the layer
