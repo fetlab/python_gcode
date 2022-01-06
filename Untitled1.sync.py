@@ -159,6 +159,9 @@ fig
 fig.add_trace(go.Scatter3d(**seg_xyz(ii[0][0], *ii[0][3], mode='lines', line={'color':'red'})));
 
 # %%
+from copy import deepcopy
+
+# %%
 def plot_steps(layer, thread_geom):
 	#Separate the layer lines that do (intersected_gc) and don't (gc_segs)
 	# intersect the thread in this layer
@@ -168,23 +171,22 @@ def plot_steps(layer, thread_geom):
 	gc_segs.difference_update(intersected_gc)
 	gc_segs = list(gc_segs)
 
-	fig = go.FigureWidget()
-	page_wide()
-	fig.update_layout(template='plotly_dark',# autosize=False,
-		width=750, margin=dict(l=0, r=20, b=0, t=0, pad=0),
-		)
+	frames = []
 
-	#First plot the gcode segments that no thread intersects,
-	anchor = thread_geom[0].start_point
-	fig.add_trace(go.Scatter(**seg_xy(
+	#List of traces to show in all frames
+	always_show = []
+
+	# gcode segments that no thread intersects should always be shown
+	always_show.append(go.Scatter(**seg_xy(
 		*gc_segs, name='gc_segs', mode='lines', line_color='green')))
-	# and assume the start_point of the first thread segment is the thread
-	# anchor point on the bed. Put the thread away from the model to begin with.
-	fig.add_trace(go.Scatter(**seg_xy(
-		Segment(anchor, Point(anchor.x, layer.extents()[1][1], 0)),
-		name='th_traj', mode='lines', line=dict(color='red', dash='dot', width=3))))
 
-	yield fig
+	#First frame is gcode + thread; assume the start_point of the first thread
+	# segment is the thread anchor point on the bed. Put the thread away from the
+	# model to begin with.
+	anchor = thread_geom[0].start_point
+	frames.append(always_show + [
+		go.Scatter(**seg_xy(Segment(anchor, Point(anchor.x, layer.extents()[1][1], 0)),
+		name='th_traj', mode='lines', line=dict(color='red', dash='dot', width=3)))])
 
 	#Now generate the frames of the animation:
 	# 1. Rotate the thread from its current anchor point to overlap the gcode segment that
@@ -197,15 +199,9 @@ def plot_steps(layer, thread_geom):
 		if not (enter or exit or gclines):
 			layer_thread = go.Scatter(**seg_xy(seg,
 				name='th_traj', mode='lines', line={'color':'red', 'dash':'dot', 'width':3}))
-			fig_del_by_names(fig, 'th_traj')
-			fig.add_trace(layer_thread)
-			print('just layer thread')
-			yield fig
+			frames.append(always_show + [layer_thread])
 			continue
 
-		#First, calculate all of the things we need to draw at this step
-		#---
-		
 		#The gcode segments that this thread segment intersects in this layer
 		isec_gcode = go.Scatter(**seg_xy(*gclines,
 			name='isec_gcode', mode='lines', line_color='yellow'))
@@ -230,27 +226,38 @@ def plot_steps(layer, thread_geom):
 		th_traj = go.Scatter(xy(anchor, point, name='th_traj', mode='lines',
 			line={'color':'white', 'dash':'dot', 'width':3}))
 
-		print('layer_thread')
-		fig.add_trace(layer_thread); yield fig
-		print('th_traj')
-		fig.add_trace(th_traj); yield fig
-		print('isec_gcode')
-		fig.add_trace(isec_gcode); yield fig
+		frames.append(always_show + [layer_thread])
+		frames.append(always_show + [th_traj])
+		frames.append(always_show + [isec_gcode])
 
-		print('end of thread segment')
-		fig_del_by_names(fig, 'th_traj')
-		fig.update_traces(patch={'line_color':'green'},
-				selector={'name':'isec_gcode'}, overwrite=True)
-		yield fig
+		#Going forward, always show the placed gcode
+		isec_gcode_new = go.Scatter(**seg_xy(*gclines, mode='lines', line_color='green'))
+		always_show.append(isec_gcode_new)
+
+		frames.append(always_show + [th_traj])
+
+	#Set up the figure
+	page_wide()
+	frames = [go.Frame(data=f) for f in frames]
+	fig = go.Figure(
+		data = always_show,
+		# layout = go.Layout(
+		# 	updatemenus=[{
+		# 		'type':'buttons',
+		# 		'buttons':[{'label':'Play', 'method':'animate', 'args':[None]}]}],
+		# 	template='plotly_dark',# autosize=False,
+		# 	width=750, margin=dict(l=0, r=20, b=0, t=0, pad=0),
+		# ),
+		frames = frames
+	)
+
+	return fig
 
 
 # %%
-ss = plot_steps(g.layers[49], thread_geom)
-fig = next(ss)
-fig
+frames = plot_steps(g.layers[49], thread_geom)
+frames[1]
 
 # %%
-next(ss);
-
-# %%
-fig.data = [d for d in fig.data if d.name != 'anchor']
+fig = plot_steps(g.layers[49], thread_geom)
+fig.show()
