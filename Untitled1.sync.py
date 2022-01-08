@@ -104,6 +104,11 @@ def fig_del_by_names(fig, *names):
 	fig.data = [d for d in fig.data if d.name in fignames]
 
 
+def pz(p):
+	"""Set z to 0 and return."""
+	p.z = 0
+	return p
+
 # %%
 # Plot steps
 styles = {
@@ -169,16 +174,16 @@ def plot_steps(layer, thread_geom):
 		# captured or points if entering/exiting)
 		if enter and exit:
 			point = enter
-			kwargs = xy(enter, exit, mode='lines')
+			kwargs = xy(enter, exit, mode='lines', name='layer_thread')
 		elif enter or exit:
 			point = enter or exit
-			kwargs = xy(point, mode='markers')
+			kwargs = xy(point, mode='markers', name='enter' if enter else 'exit')
 		else:
 			point = seg.start_point
-			kwargs = seg_xy(seg, mode='lines')
+			kwargs = seg_xy(seg, mode='lines', name='seg.start_point')
 
 		kwargs.update(styles['layer_thread'])
-		layer_thread = go.Scatter(name='layer_thread', **kwargs)
+		layer_thread = go.Scatter(**kwargs)
 
 		#The representation of the actual thread trajectory, from anchor to thread
 		# carrier
@@ -187,7 +192,9 @@ def plot_steps(layer, thread_geom):
 			**styles['th_traj']))
 
 		#Set the anchor to the last place the thread gets captured
-		#anchor = min(gcinter, key=lambda p:pz(seg.end_point).distance(pz(p)))
+		# TODO: did it actually get captured? If it exited, it didn't! Then we need to
+		# move the thread out of the way.
+		anchor = min(gcinter, key=lambda p:pz(seg.end_point).distance(pz(p)))
 
 		frames.append(always_show + [
 			isec_gcode,
