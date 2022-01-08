@@ -18,6 +18,7 @@
 import pickle
 import numpy as np
 import thread, gcode, gclayer
+from copy import deepcopy
 from Geometry3D import Segment, Point, intersection, Renderer
 from parsers import cura4
 from importlib import reload
@@ -30,6 +31,8 @@ init_notebook_mode(connected=True)
 #suppress scientific notation
 np.set_printoptions(suppress=True, precision=2)
 
+# %%
+reload(thread); reload(gcode); reload(cura4); reload(gclayer)
 
 # %%
 #turn off autosave since we sync from vim
@@ -47,9 +50,6 @@ def page_wide():
 		.modebar { padding-right: 250px !important; }
 	</style>
 	"""))
-
-# %%
-reload(thread); reload(gcode); reload(cura4); reload(gclayer)
 
 # %%
 g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode')
@@ -103,66 +103,9 @@ def fig_del_by_names(fig, *names):
 	fignames.difference_update(names)
 	fig.data = [d for d in fig.data if d.name in fignames]
 
-# %%
-def plot_layer(layer, thread_geom=[]):
-	fig = go.FigureWidget()
-
-	fig.add_trace(go.Scatter3d(**seg_xyz(
-			*layer.geometry.segments,
-			mode='lines',
-			line={'color': 'green'})))
-
-	if thread_geom:
-		#Plot the thread
-		fig.add_trace(go.Scatter3d(**seg_xyz(
-			*thread_geom,
-			mode='lines',
-			line={'color':'white', 'dash':'dot', 'width':3})))
-
-		intersections = thread.intersect_thread(thread_geom, layer)
-		for seg,enter,exit,gclines in intersections:
-			if enter and exit:
-				kwargs = xyz(enter, exit, mode='lines')
-			elif enter or exit:
-				point = enter or exit
-				kwargs = xyz(point, mode='markers')
-			else:
-				kwargs = xyz(seg.start_point, seg.end_point, mode='lines')
-
-			fig.add_trace(go.Scatter3d(
-				marker={'color':'yellow', 'size':4},
-				line={'color':'yellow', 'width':8},
-				**kwargs,
-			))
-
-			if gclines:
-				fig.add_trace(go.Scatter3d(**seg_xyz(
-					*gclines,
-					mode='lines',
-					line={'color':'yellow', 'width': 2},
-				)))
-
-	fig.update_layout(template='plotly_dark',# autosize=False,
-			scene_aspectmode='data',
-		width=750, height=750, margin=dict(l=0, r=20, b=0, t=0, pad=0),
-		)
-	#fig.show('notebook')
-
-	return fig, intersections
 
 # %%
-page_wide()
-fig, ii = plot_layer(g.layers[49], thread_geom)
-fig
-
-# %%
-# seg,enter,exit,gclines 
-fig.add_trace(go.Scatter3d(**seg_xyz(ii[0][0], *ii[0][3], mode='lines', line={'color':'red'})));
-
-# %%
-from copy import deepcopy
-
-# %%
+# Plot steps
 styles = {
 	'gc_segs':      {'mode': 'lines', 'line': dict(color='green', width=1)},
 	'th_traj':      {'mode': 'lines', 'line': dict(color='cyan', dash='dot', width=1)},
@@ -209,8 +152,6 @@ def plot_steps(layer, thread_geom):
 	# 3. Store the new anchor point for the thread.
 	# Each frame should show updates of the previous.
 	for seg,enter,exit,gclines,gcinter in intersections:
-		print(f'enter: {bool(enter)}, exit: {bool(exit)}, gclines: {len(gclines)}, gcinter: {len(gcinter)}')
-
 		#The thread segment, whether or not it intersects anything in the layer
 		thread_seg = go.Scatter(**seg_xy(seg, name='thread_seg', **styles['thread_seg']))
 
@@ -272,53 +213,6 @@ def show_each_frame(frames):
 				margin=dict(l=0, r=20, b=0, t=0, pad=0),
 				showlegend=False,)
 		fig.show('notebook')
-
-# %%
-def show_frames_as_subplots(frames):
-	#fig = frames2subplots(frames)
-	fig.update_layout(template='plotly_dark',# autosize=False,
-			yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
-			height=750*len(frames),
-			margin=dict(l=0, r=20, b=0, t=0, pad=0),
-			showlegend=False,
-		)
-	return fig
-
-# %%
-def animate_frames(frames):
-	#Set up the figure
-	(xm, ym), (xM, yM) = layer.extents()
-	page_wide()
-	frames = [go.Frame(data=f) for f in frames]
-	fig = go.Figure(
-		data = always_show,
-		 layout = go.Layout(
-			scene_aspectmode='data',
-			xaxis={'range': [xm, xM], 'autorange': False},
-			yaxis={'range': [ym, yM], 'autorange': False},
-		 	updatemenus=[{
-		 		'type':'buttons',
-		 		'buttons':[{'label':'Play', 'method':'animate',
-					'args':[None, {'transition':{'duration':0}}]}]}],
-		 	template='plotly_dark', autosize=False,
-		 	width=750, margin=dict(l=0, r=20, b=0, t=0, pad=0),
-		 ),
-		frames = frames
-	)
-
-	return fig
-
-
-# %%
-def frames2subplots(frames, titles=[]):
-	fig = make_subplots(rows=len(frames), subplot_titles=titles,
-			shared_xaxes=True, shared_yaxes=True,
-			vertical_spacing=.001
-	)
-	for i,frame in enumerate(frames):
-		for trace in frame:
-			fig.add_trace(trace, row=i+1, col=1)
-	return fig
 
 # %%
 frames = plot_steps(g.layers[49], thread_geom)

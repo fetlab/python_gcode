@@ -89,12 +89,11 @@ def intersect_thread(th: [Segment], layer):
 
 		#And find the gCode lines the segment intersects with
 		gc_inter, inter_points = [], []
-		gc_inter = [gcseg for gcseg in layer.geometry.segments if intersection2d(t, gcseg)]
-		# for gcseg in layer.geometry.segments:
-		# 	inter = intersection2d(t, gcseg)
-		# 	if inter:
-		# 		gc_inter.append(gcseg)
-		# 		inter_points.append(inter)
+		for i,gcseg in enumerate(layer.geometry.segments):
+			inter = intersection2d(t, gcseg)
+			if inter:
+				gc_inter.append(gcseg)
+				inter_points.append(inter)
 
 		segs.append([t, enter, exit, gc_inter, inter_points])
 
