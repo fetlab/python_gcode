@@ -80,7 +80,7 @@ def intersect_thread(th: [Segment], layer):
 		#Is the segment entirely below or above the layer? If so, skip it.
 		if((t.start_point.z <  bottom.z and t.end_point.z <  bottom.z) or
 			 (t.start_point.z >= top.z   and  t.end_point.z >= top.z)):
-			segs.append([t, None, None, []])
+			segs.append([t, None, None, [], []])
 			continue
 
 		#See if the thread segment enters and/or exits the layer
@@ -88,10 +88,15 @@ def intersect_thread(th: [Segment], layer):
 		exit  = t.intersection(top)
 
 		#And find the gCode lines the segment intersects with
-		gc_inter = [gcseg for gcseg in layer.geometry.segments
-				if intersection2d(t, gcseg)]
+		gc_inter, inter_points = [], []
+		gc_inter = [gcseg for gcseg in layer.geometry.segments if intersection2d(t, gcseg)]
+		# for gcseg in layer.geometry.segments:
+		# 	inter = intersection2d(t, gcseg)
+		# 	if inter:
+		# 		gc_inter.append(gcseg)
+		# 		inter_points.append(inter)
 
-		segs.append([t, enter, exit, gc_inter])
+		segs.append([t, enter, exit, gc_inter, inter_points])
 
 	return segs
 
