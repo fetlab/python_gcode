@@ -18,6 +18,7 @@
 import pickle
 import numpy as np
 import thread, gcode, gclayer
+import router
 from copy import deepcopy
 from Geometry3D import Segment, Point, intersection, Renderer
 from parsers import cura4
@@ -32,7 +33,7 @@ init_notebook_mode(connected=True)
 np.set_printoptions(suppress=True, precision=2)
 
 # %%
-reload(thread); reload(gcode); reload(cura4); reload(gclayer)
+reload(thread); reload(gcode); reload(cura4); reload(gclayer); reload(router)
 
 # %%
 #turn off autosave since we sync from vim
