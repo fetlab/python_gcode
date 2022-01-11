@@ -52,11 +52,19 @@ class Ring:
 
 class Bed:
 	__repr__ = basic_repr('anchor_location,size')
+
 	def __init__(self, anchor_location=(0,0), size=(220, 220)):
 		store_attr()
 
 
-class Machine:
+
+class Router:
+	__repr__ = basic_repr('bed,ring')
+
+	def __init__(self, bed, ring):
+		store_attr()
+		self.anchor = Point(bed.anchor_location[0], bed.anchor_location[1], 0)
+
 	def thread(self):
 		"""Return a Segment representing the current thread, from the anchor point to the ring."""
 		#TODO: account for bed location (y axis)
