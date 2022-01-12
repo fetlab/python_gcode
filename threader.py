@@ -4,6 +4,14 @@ from fastcore.basics import *
 from Geometry3D import Segment, Point, intersection
 from math import radians, sin, cos
 
+"""TODO:
+	* [ ] layer.intersect(thread)
+	* [ ] gcode generator for ring
+	* [ ] plot() methods
+	* [ ] thread_avoid()
+	* [ ] thread_intersect
+"""
+
 
 class Ring:
 	#Defaults
@@ -18,14 +26,6 @@ class Ring:
 	}
 
 	__repr__ = basic_repr('diameter,angle,center')
-
-	@classmethod
-	def angle2point(cls, angle, radius=_radius, center=_center):
-		"""Return an x,y,z=0 location on the ring based on the given angle. Assumes that the
-		bed's bottom-left corner is (0,0). Doesn't take into account a machine that uses
-		bed movement for the y-axis, but just add the y value to the return from this function."""
-		pass
-
 
 	def __init__(self, radius=_radius, angle=_angle, center:Point=_center, style:dict=None):
 		"""Initialize the ring with radius and center specified in mm and angle in degrees."""
@@ -50,6 +50,11 @@ class Ring:
 		self.set_angle(new_pos)
 
 
+	@property
+	def point(self):
+		return self.angle2point(self.angle)
+
+
 	def set_angle(self, new_angle, direction=None):
 		"""Set a new angle for the ring. Optionally provide a preferred movement
 		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
@@ -62,6 +67,18 @@ class Ring:
 		return Point(
 			self.center.x + cos(self.angle)*(self.radius+offset),
 			self.center.y + sin(self.angle)*(self.radius+offset),
+		)
+
+
+	def angle2point(self, angle):
+		"""Return an x,y,z=0 location on the ring based on the given angle, without
+		moving the ring. Assumes that the bed's bottom-left corner is (0,0).
+		Doesn't take into account a machine that uses bed movement for the y-axis,
+		but just add the y value to the return from this function."""
+		return Point(
+			cos(radians(angle)) * self.radius + self.center.x,
+			sin(radians(angle)) * self.radius + self.center.y,
+			0
 		)
 
 
@@ -118,7 +135,7 @@ class State:
 	def thread(self):
 		"""Return a Segment representing the current thread, from the anchor point to the ring."""
 		#TODO: account for bed location (y axis)
-		return Segment(self.anchor, self.ring.angle())
+		return Segment(self.anchor, self.ring.point)
 
 
 	def thread_avoid(self, avoid=[]):
@@ -130,9 +147,19 @@ class State:
 			here is just to exhaustively test.
 		"""
 		#First check to see if we have intersections at all; if not, we're done!
+		thr = self.thread()
+		if not any(thr.intersection(i) for i in avoid):
+			return
 
 		#Next, try to move in increments around the current position to minimize movement time
 		# use angle2point()
+		for inc in range(10, 190, 10):
+			for ang in (self.ring.angle + inc, self.ring.angle - inc):
+				thr = Segment(self.anchor, self.ring.angle2point(ang))
+				if not any(thr.intersection(i) for i in avoid):
+					self.ring.set_angle(ang)
+					return
+
 		
 
 
@@ -217,7 +244,7 @@ class Threader:
 			# so we should just be able to rotate the ring
 			#To rotate ring, we need to know: current anchor location and things thread
 			# shouldn't intersect
-			self.state.thread_avoid(self.state.anchor, intersections.non_intersecting)
+			self.state.thread_avoid(intersections.non_intersecting)
 
 		with steps.new_step('Print non-intersecting layer segments') as s:
 			s.add(intersections.non_intersecting)
