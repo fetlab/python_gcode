@@ -1,8 +1,11 @@
 import plotly.graph_objects as go
+import Geometry3D
+from functools import partial
 from copy import deepcopy
 from fastcore.basics import *
 from Geometry3D import Segment, Point, intersection
 from math import radians, sin, cos
+from pint import UnitRegistry
 
 """TODO:
 	* [ ] layer.intersect(thread)
@@ -10,13 +13,21 @@ from math import radians, sin, cos
 	* [ ] plot() methods
 	* [ ] thread_avoid()
 	* [ ] thread_intersect
+	* [ ] wrap Geometry3D functions with units; or maybe get rid of units again?
 """
+
+#Unit helping
+ureg = UnitRegistry(auto_reduce_dimensions=True)
+class UnitHelper:
+	def __getattr__(self, attr):
+		return partial(ureg.Quantity, units=attr)
+U = UnitHelper()
 
 
 class Ring:
 	#Defaults
-	_radius = 110  #mm
-	_angle  =   0  #degrees
+	_radius = U.mm(110)
+	_angle  = U.radians(0)
 	_center = Point(110, 110, 0)
 
 	#Default plotting style
@@ -27,12 +38,14 @@ class Ring:
 
 	__repr__ = basic_repr('diameter,angle,center')
 
-	def __init__(self, radius=_radius, angle=_angle, center:Point=_center, style:dict=None):
-		"""Initialize the ring with radius and center specified in mm and angle in degrees."""
+	def __init__(self, radius:U.mm=_radius, angle:U.radians=_angle,
+			center:Point=_center, style:dict=None):
 		store_attr(but='style', cast=True)
 
 		self._angle        = angle
 		self.initial_angle = angle
+		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=50)
+		self.x_axis        = Vector(self.center, Point(self.radius, 0, 0))
 
 		self.style = deepcopy(self._style)
 		if style is not None:
@@ -138,8 +151,9 @@ class State:
 		return Segment(self.anchor, self.ring.point)
 
 
-	def thread_avoid(self, avoid=[]):
-		"""Rotate the ring so that the thread is positioned to not intersect the geometry in avoid."""
+	def thread_avoid(self, avoid=[], move_ring=True):
+		"""Rotate the ring so that the thread is positioned to not intersect the
+		geometry in avoid. Return the rotation value."""
 		"""Except in the case that the anchor is still on the bed, the anchor is
 			guaranteed to be inside printed material (by definition). We might have
 			some cases where for a given layer there are two gcode regions (Cura sets
@@ -163,10 +177,18 @@ class State:
 		
 
 
-	def thread_intersect(self, target, set_new_anchor=True):
-		"""Rotate the ring so that the thread intersects the target. By default
-		sets the anchor to the intersection."""
+	def thread_intersect(self, target, set_new_anchor=True, move_ring=True):
+		"""Rotate the ring so that the thread intersects the target Point. By default
+		sets the anchor to the intersection. Return the rotation value."""
+		#Form a half line (basically a ray) from the anchor through the target
+		hl = HalfLine(self.anchor, target)
 
+		#Find intersection with the ring; this returns a Segment starting at the anchor
+		ring_point = intersection(hl, self.ring.geometry).end_point
+
+		#Now we need the angle between center->ring and the x axis
+		ring_angle = degrees(angle(self.ring.x_axis, Vector(self.ring.center, ring_point)))
+		
 
 
 class Step:
