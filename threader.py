@@ -16,8 +16,8 @@ from pint import UnitRegistry
 	* [ ] wrap Geometry3D functions with units; or maybe get rid of units again?
 """
 
-#Unit helping
 ureg = UnitRegistry(auto_reduce_dimensions=True)
+#So we can do U.mm(7) instead of (7*ureg.mm)
 class UnitHelper:
 	def __getattr__(self, attr):
 		return partial(ureg.Quantity, units=attr)
@@ -176,8 +176,6 @@ class State:
 					return ang
 
 		return None
-
-
 
 	def thread_intersect(self, target, set_new_anchor=True, move_ring=True):
 		"""Rotate the ring so that the thread intersects the target Point. By default
