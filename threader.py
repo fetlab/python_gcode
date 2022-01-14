@@ -171,10 +171,12 @@ class State:
 			for ang in (self.ring.angle + inc, self.ring.angle - inc):
 				thr = Segment(self.anchor, self.ring.angle2point(ang))
 				if not any(thr.intersection(i) for i in avoid):
-					self.ring.set_angle(ang)
-					return
+					if move_ring:
+						self.ring.set_angle(ang)
+					return ang
 
-		
+		return None
+
 
 
 	def thread_intersect(self, target, set_new_anchor=True, move_ring=True):
@@ -188,6 +190,14 @@ class State:
 
 		#Now we need the angle between center->ring and the x axis
 		ring_angle = degrees(angle(self.ring.x_axis, Vector(self.ring.center, ring_point)))
+
+		if move_ring:
+			self.ring.set_angle(ring_angle)
+
+		if set_new_anchor:
+			self.anchor = target
+
+		return ring_angle
 		
 
 
@@ -211,6 +221,9 @@ class Step:
 		#Otherwise store the current state
 		self.state = self.state.freeze()
 
+
+	def plot(self):
+		#Plot things in order
 
 
 class Steps:
