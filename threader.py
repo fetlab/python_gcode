@@ -5,7 +5,7 @@ from copy import deepcopy
 from fastcore.basics import *
 from Geometry3D import Segment, Point, intersection
 from math import radians, sin, cos
-from pint import UnitRegistry
+from units import *
 
 """TODO:
 	* [ ] layer.intersect(thread)
@@ -14,33 +14,39 @@ from pint import UnitRegistry
 	* [ ] thread_avoid()
 	* [ ] thread_intersect
 	* [ ] wrap Geometry3D functions with units; or maybe get rid of units again?
+	* [ ] think about how to represent a layer as a set of time-ordered segments
+				that we can intersect but also as something that has non-geometry components
 """
 
-ureg = UnitRegistry(auto_reduce_dimensions=True)
-#So we can do U.mm(7) instead of (7*ureg.mm)
-class UnitHelper:
-	def __getattr__(self, attr):
-		return partial(ureg.Quantity, units=attr)
-U = UnitHelper()
+class Layer(gclayer.Layer):
+	def intersect(self, thread:[Segment]):
+	"""Want to support:
+		intersections = layer.intersect(thread)
+		self.state.thread_avoid(intersections.non_intersecting)
+		s.add(intersections.non_intersecting)
+		seg_intersections = intersections.intersecting(thread_seg)
+		s.add(seg_intersections)
+		self.state.thread_intersect(next(intersections.anchors))
+	"""
+	pass
 
 
 class Ring:
 	#Defaults
-	_radius = U.mm(110)
-	_angle  = U.radians(0)
-	_center = Point(110, 110, 0)
+	_radius = 110*mm
+	_angle  = 0*rad
+	_center = Point(*U.mm(110, 110, 0))
 
 	#Default plotting style
 	_style = {
-		'ring':      {line: dict(color='white', width=10)},
-		'indicator': {line: dict(color='blue',  width= 2)},
+		'ring':      {line: dict(color='white', width=10*mm)},
+		'indicator': {line: dict(color='blue',  width= 2*mm)},
 	}
 
 	__repr__ = basic_repr('diameter,angle,center')
 
-	def __init__(self, radius:U.mm=_radius, angle:U.radians=_angle,
-			center:Point=_center, style:dict=None):
-		store_attr(but='style', cast=True)
+	def __init__(self, radius=_radius, angle=_angle, center=_center, style=None):
+		store_attr(but='style')
 
 		self._angle        = angle
 		self.initial_angle = angle
@@ -128,7 +134,7 @@ class Ring:
 class Bed:
 	__repr__ = basic_repr('anchor_location,size')
 
-	def __init__(self, anchor_location=(0,0), size=(220, 220)):
+	def __init__(self, anchor_location=mm(0,0), size=mm(220, 220)):
 		store_attr()
 
 
@@ -138,20 +144,21 @@ class State:
 	
 	def __init__(self, bed, ring):
 		store_attr()
-		self.anchor = Point(bed.anchor_location[0], bed.anchor_location[1], 0)
+		self.anchor = Point(bed.anchor_location[0], bed.anchor_location[1], 0*mm)
 
 
 	def freeze(self):
 		return deepcopy(self)
 
 
-	def thread(self):
-		"""Return a Segment representing the current thread, from the anchor point to the ring."""
+	def thread(self) -> Segment:
+		"""Return a Segment representing the current thread, from the anchor point
+		to the ring."""
 		#TODO: account for bed location (y axis)
 		return Segment(self.anchor, self.ring.point)
 
 
-	def thread_avoid(self, avoid=[], move_ring=True):
+	def thread_avoid(self, avoid:[Segment]=[], move_ring=True):
 		"""Rotate the ring so that the thread is positioned to not intersect the
 		geometry in avoid. Return the rotation value."""
 		"""Except in the case that the anchor is still on the bed, the anchor is
