@@ -3,9 +3,12 @@ import Geometry3D
 from functools import partial
 from copy import deepcopy
 from fastcore.basics import *
-from Geometry3D import Segment, Point, intersection
+from fastcore.meta import delegates
+from Geometry3D import Segment, Point, intersection, distance
 from math import radians, sin, cos
 from units import *
+from typing import List, Dict
+from geometry_helpers import *
 
 """TODO:
 	* [ ] layer.intersect(thread)
@@ -16,19 +19,104 @@ from units import *
 	* [ ] wrap Geometry3D functions with units; or maybe get rid of units again?
 	* [ ] think about how to represent a layer as a set of time-ordered segments
 				that we can intersect but also as something that has non-geometry components
+				* Also note the challenge of needing to have gCode be Segments but keeping the
+					gcode info such as move speed and extrusion amount
+					* But a Segment represents two lines of gcode as vertices....
+	* [ ] Order isecs['isec_points'] in the Layer.anchors() method
 """
 
+@delegates  #Inherit docstrings and kwargs from parent class (from fastcore)
 class Layer(gclayer.Layer):
-	def intersect(self, thread:[Segment]):
-	"""Want to support:
-		intersections = layer.intersect(thread)
-		self.state.thread_avoid(intersections.non_intersecting)
-		s.add(intersections.non_intersecting)
-		seg_intersections = intersections.intersecting(thread_seg)
-		s.add(seg_intersections)
-		self.state.thread_intersect(next(intersections.anchors))
-	"""
-	pass
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.geometry = Geometry(segments=[], planes=[])
+		self._isecs = {}
+
+
+	def add_geometry(self):
+		"""Add geometry to this Layer based on the list of lines, using
+		GSegment."""
+		if self.geometry or not self.has_moves:
+			return
+
+		last = None
+		for line in self.lines:
+			if line.is_xymove():
+				try:
+					self.geometry.segments.append(GSegment(last, line, z=self.z))
+				except (AttributeError, TypeError) as e:
+					raise GCodeException((layer,last),
+							f'GSegment {line.lineno}: {line}') from e
+			if line.is_xymove():
+				last = line
+
+
+	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
+		"""Return a list of GSegments which the given thread segments do not
+		intersect."""
+		self._intersect(thread)
+		return sum([self._isecs[tseg]['nsec_segs'] for tseg in thread], [])
+
+
+	def intersecting(self, thread: List[Segment]) -> List[GSegment]:
+		"""Return a list of GSegments which the given thread segments intersect."""
+		self._intersect(thread)
+		return sum([self._isecs[tseg]['isec_segs'] for tseg in thread], [])
+
+
+	def anchors(self, tseg: Segment) -> List[Point]:
+		"""Return a list of "anchor points" - Points at which the given thread
+		segment intersects the layer geometry."""
+		#Need to order the points: sort the list of intersections by distance to
+		# the segment start point
+		self._intersect([threadseg])
+		return sorted(self._isects[tseg],
+				key=lambda p:distance(tseg.start_point.as2d(), p.as2d()))
+		
+
+
+	def _intersect(self, thread: List[Segment]):
+		#Call this in each of the intersection methods above to cache any
+		# intersections for each thread segment.
+
+		#Want to support:
+		# intersections = layer.intersect(thread)
+		# self.state.thread_avoid(intersections.non_intersecting)
+		# s.add(intersections.non_intersecting)
+		# seg_intersections = intersections.intersecting(thread_seg)
+		# s.add(seg_intersections)
+		# self.state.thread_intersect(next(intersections.anchors))
+
+		bot = self.geometry.planes.bot
+		top = self.geometry.planes.top
+
+		for t in thread:
+			#Caching
+			if t in self._isecs:
+				continue
+			self._isecs[t] = isecs = {
+					'nsec_segs': [],                      #Non-intersecting segments
+					'isec_segs': [], 'isec_points': [],   #Intersecting segments and locations
+					'enter': None, 'exit': None,          #Entry and/or exit locations
+			}
+
+			#Is the segment entirely below or above the layer? If so, skip it.
+			if((t.start_point.z <  bot.z and t.end_point.z <  bot.z) or
+				 (t.start_point.z >= top.z and t.end_point.z >= top.z)):
+				isecs['nsec_segs'].append(t)	
+				continue
+
+			#See if the thread segment enters and/or exits the layer
+			isecs['enter'] = t.intersection(bot)
+			isecs['exit']  = t.intersection(top)
+
+			#And find the gCode lines the thread segment intersects with
+			for gcseg in self.geometry.segments:
+				inter = intersection2d(t, gcseg)
+				if inter:
+					isecs['isec_segs'  ].append(gcseg)
+					isecs['isec_points'].append(inter)
+
 
 
 class Ring:
@@ -158,7 +246,7 @@ class State:
 		return Segment(self.anchor, self.ring.point)
 
 
-	def thread_avoid(self, avoid:[Segment]=[], move_ring=True):
+	def thread_avoid(self, avoid: List[Segment]=[], move_ring=True):
 		"""Rotate the ring so that the thread is positioned to not intersect the
 		geometry in avoid. Return the rotation value."""
 		"""Except in the case that the anchor is still on the bed, the anchor is
