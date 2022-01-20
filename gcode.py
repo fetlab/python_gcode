@@ -61,7 +61,7 @@ class GcodeFile():
 			return
 
 		parser = parsers.find_parser(self.filelines)
-		self.preamble, self.layers = parser.parse(self.filelines)
+		self.preamble, self.layers = parser.parse(self.filelines, layer_class=self.layer_class)
 
 
 def test():

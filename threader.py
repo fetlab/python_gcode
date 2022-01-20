@@ -1,35 +1,37 @@
 import plotly.graph_objects as go
 import Geometry3D
+import gclayer
 from functools import partial
 from copy import deepcopy
 from fastcore.basics import *
 from fastcore.meta import delegates
-from Geometry3D import Segment, Point, intersection, distance
+from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
 from math import radians, sin, cos
 from units import *
 from typing import List, Dict
 from geometry_helpers import *
 
 """TODO:
-	* [ ] layer.intersect(thread)
+	* [X] layer.intersect(thread)
 	* [ ] gcode generator for ring
 	* [ ] plot() methods
-	* [ ] thread_avoid()
-	* [ ] thread_intersect
+	* [X] thread_avoid()
+	* [X] thread_intersect
 	* [ ] wrap Geometry3D functions with units; or maybe get rid of units again?
-	* [ ] think about how to represent a layer as a set of time-ordered segments
+	* [X] think about how to represent a layer as a set of time-ordered segments
 				that we can intersect but also as something that has non-geometry components
 				* Also note the challenge of needing to have gCode be Segments but keeping the
 					gcode info such as move speed and extrusion amount
 					* But a Segment represents two lines of gcode as vertices....
-	* [ ] Order isecs['isec_points'] in the Layer.anchors() method
+	* [X] Order isecs['isec_points'] in the Layer.anchors() method
 """
 
-@delegates  #Inherit docstrings and kwargs from parent class (from fastcore)
-class Layer(gclayer.Layer):
-	def __init__(self, *args, **kwargs):
+#@delegates  #Inherit docstrings and kwargs from parent class (from fastcore)
+class TLayer(gclayer.Layer):
+	def __init__(self, *args, layer_height=0.4, **kwargs):
 		super().__init__(*args, **kwargs)
-		self.geometry = Geometry(segments=[], planes=[])
+		self.geometry = None
+		self.layer_height = layer_height
 		self._isecs = {}
 
 
@@ -37,7 +39,9 @@ class Layer(gclayer.Layer):
 		"""Add geometry to this Layer based on the list of lines, using
 		GSegment."""
 		if self.geometry or not self.has_moves:
+			print(f'nope: {self.has_moves}')
 			return
+		self.geometry = Geometry(segments=[], planes=None)
 
 		last = None
 		for line in self.lines:
@@ -45,10 +49,24 @@ class Layer(gclayer.Layer):
 				try:
 					self.geometry.segments.append(GSegment(last, line, z=self.z))
 				except (AttributeError, TypeError) as e:
-					raise GCodeException((layer,last),
+					raise GCodeException((self,last),
 							f'GSegment {line.lineno}: {line}') from e
 			if line.is_xymove():
 				last = line
+
+		(min_x, min_y), (max_x, max_y) = self.extents()
+		mid_x = min_x + .5 * (max_x - min_x)
+		z = self.z
+
+		plane_points = [(min_x, min_y), (mid_x, max_y), (max_x, max_y)]
+		bot_z = z - self.layer_height/2
+		top_z = z + self.layer_height/2
+		bottom = Plane(*[Point(p[0], p[1], bot_z) for p in plane_points])
+		top    = Plane(*[Point(p[0], p[1], top_z) for p in plane_points])
+		bottom.z = bot_z
+		top.z    = top_z
+		self.geometry.planes = Planes(bottom=bottom, top=top)
+		print('reached here')
 
 
 	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
@@ -66,12 +84,12 @@ class Layer(gclayer.Layer):
 
 	def anchors(self, tseg: Segment) -> List[Point]:
 		"""Return a list of "anchor points" - Points at which the given thread
-		segment intersects the layer geometry."""
-		#Need to order the points: sort the list of intersections by distance to
-		# the segment start point
+		segment intersects the layer geometry, ordered by distance to the
+		end point of the thread segment (with the assumption that this the
+		"true" anchor point, as the last location the thread will be stuck down."""
 		self._intersect([threadseg])
 		return sorted(self._isects[tseg],
-				key=lambda p:distance(tseg.start_point.as2d(), p.as2d()))
+				key=lambda p:distance(tseg.end_point.as2d(), p.as2d()))
 		
 
 
@@ -86,24 +104,24 @@ class Layer(gclayer.Layer):
 		# seg_intersections = intersections.intersecting(thread_seg)
 		# s.add(seg_intersections)
 		# self.state.thread_intersect(next(intersections.anchors))
+		self.add_geometry()
 
-		bot = self.geometry.planes.bot
+		bot = self.geometry.planes.bottom
 		top = self.geometry.planes.top
 
-		for t in thread:
+		for tseg in thread:
 			#Caching
-			if t in self._isecs:
+			if tseg in self._isecs:
 				continue
-			self._isecs[t] = isecs = {
-					'nsec_segs': [],                      #Non-intersecting segments
-					'isec_segs': [], 'isec_points': [],   #Intersecting segments and locations
-					'enter': None, 'exit': None,          #Entry and/or exit locations
+			self._isecs[tseg] = isecs = {
+					'nsec_segs': [],                      #Non-intersecting gcode segments
+					'isec_segs': [], 'isec_points': [],   #Intersecting gcode segments and locations
+					'enter': None, 'exit': None,          #Thread segment entry and/or exit locations
 			}
 
-			#Is the segment entirely below or above the layer? If so, skip it.
-			if((t.start_point.z <  bot.z and t.end_point.z <  bot.z) or
-				 (t.start_point.z >= top.z and t.end_point.z >= top.z)):
-				isecs['nsec_segs'].append(t)	
+			#Is the thread segment entirely below or above the layer? If so, skip it.
+			if((tseg.start_point.z <  bot.z and tseg.end_point.z <  bot.z) or
+				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
 				continue
 
 			#See if the thread segment enters and/or exits the layer
@@ -112,23 +130,26 @@ class Layer(gclayer.Layer):
 
 			#And find the gCode lines the thread segment intersects with
 			for gcseg in self.geometry.segments:
+				gcseg.printed = False
 				inter = intersection2d(t, gcseg)
 				if inter:
 					isecs['isec_segs'  ].append(gcseg)
 					isecs['isec_points'].append(inter)
+				else:
+					isects['nsec_segs'].append(gcseg)
 
 
 
 class Ring:
 	#Defaults
-	_radius = 110*mm
-	_angle  = 0*rad
-	_center = Point(*U.mm(110, 110, 0))
+	_radius = 110
+	_angle  = 0
+	_center = Point(110, 110, 0)
 
 	#Default plotting style
 	_style = {
-		'ring':      {line: dict(color='white', width=10*mm)},
-		'indicator': {line: dict(color='blue',  width= 2*mm)},
+		'ring':      {'line': dict(color='white', width=10)},
+		'indicator': {'line': dict(color='blue',  width= 2)},
 	}
 
 	__repr__ = basic_repr('diameter,angle,center')
@@ -222,7 +243,7 @@ class Ring:
 class Bed:
 	__repr__ = basic_repr('anchor_location,size')
 
-	def __init__(self, anchor_location=mm(0,0), size=mm(220, 220)):
+	def __init__(self, anchor_location=(0,0), size=(220, 220)):
 		store_attr()
 
 
@@ -232,7 +253,7 @@ class State:
 	
 	def __init__(self, bed, ring):
 		store_attr()
-		self.anchor = Point(bed.anchor_location[0], bed.anchor_location[1], 0*mm)
+		self.anchor = Point(bed.anchor_location[0], bed.anchor_location[1], 0)
 
 
 	def freeze(self):
@@ -300,8 +321,11 @@ class Step:
 		self.gcode = []
 
 
-	def add(self, gcode):
-		self.gcode.append(gcode)
+	def add(self, gclines):
+		for l in gclines:
+			if not l.printed:
+				self.gcode.append(l)
+				l.printed = True
 
 
 	def __enter__(self):
@@ -317,6 +341,7 @@ class Step:
 
 	def plot(self):
 		#Plot things in order
+		raise NotImplementedError
 
 
 class Steps:
@@ -330,7 +355,7 @@ class Steps:
 		return self._steps[-1] if self._steps else None
 
 	def new_step(self, name=''):
-		self.steps.append(Step(self.state, name))
+		self._steps.append(Step(self.state, name))
 		return self.current
 
 
@@ -362,8 +387,6 @@ class Threader:
 			A. Move the thread to overlap its end point
 			B. Print over all intersecting gcode segments
 		"""
-		intersections = layer.intersect(thread)
-
 		steps = Steps(layer=layer, state=self.state)
 
 		with steps.new_step('Move thread out of the way') as s:
@@ -372,18 +395,32 @@ class Threader:
 			# so we should just be able to rotate the ring
 			#To rotate ring, we need to know: current anchor location and things thread
 			# shouldn't intersect
-			self.state.thread_avoid(intersections.non_intersecting)
+			self.state.thread_avoid(layer.non_intersecting(thread))
 
 		with steps.new_step('Print non-intersecting layer segments') as s:
-			s.add(intersections.non_intersecting)
+			s.add(layer.non_intersecting(thread))
 
 		for thread_seg in thread:
-			seg_intersections = intersections.intersecting(thread_seg)
+			seg_intersections = layer.intersecting([thread_seg])
 
 			with steps.new_step('Move thread to overlap next anchor') as s:
-				self.state.thread_intersect(next(intersections.anchors))
+				self.state.thread_intersect(layer.anchors(thread_seg))
 
 			with steps.new_step('Print overlapping layers segments')	as s:
-				s.add(seg_intersections)
+				s.add(layer.intersecting([thread_seg]))
 
 		return steps
+
+
+if __name__ == "__main__":
+	import gcode                                                                     
+	import numpy as np                                                                         
+	from Geometry3D import Segment, Point                                                      
+	tpath = np.array(unpickle('/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle')) * 10
+	thread_transform = [131.164, 110.421, 0]
+	tpath += [thread_transform, thread_transform]
+	thread_geom = tuple([Segment(Point(*s), Point(*e)) for s,e in tpath])
+	g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
+			layer_class=TLayer)
+	t = Threader(g)
+	t.route_layer(thread_geom, g.layers[43])

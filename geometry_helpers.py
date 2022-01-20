@@ -6,6 +6,7 @@ from units import *
 from gcline import Line
 from dataclasses import make_dataclass
 from copy import deepcopy
+from fastcore.basics import *
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
