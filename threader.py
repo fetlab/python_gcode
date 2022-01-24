@@ -1,15 +1,12 @@
-import plotly.graph_objects as go
-import Geometry3D
 import gclayer
-from functools import partial
 from copy import deepcopy
-from fastcore.basics import *
-from fastcore.meta import delegates
-from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
-from math import radians, sin, cos
-from units import *
-from typing import List, Dict
-from geometry_helpers import *
+from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance, angle
+from math import radians, sin, cos, degrees
+from typing import List
+from geometry_helpers import GSegment, Geometry, Planes, HalfLine
+from fastcore.basics import basic_repr, store_attr
+from rich import print
+#from loguru import logger
 
 """TODO:
 	* [X] layer.intersect(thread)
@@ -26,7 +23,13 @@ from geometry_helpers import *
 	* [X] Order isecs['isec_points'] in the Layer.anchors() method
 """
 
-#@delegates  #Inherit docstrings and kwargs from parent class (from fastcore)
+class GCodeException(Exception):
+	def __init__(self, obj, message):
+		self.obj = obj
+		self.message = message
+
+
+
 class TLayer(gclayer.Layer):
 	def __init__(self, *args, layer_height=0.4, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -39,18 +42,18 @@ class TLayer(gclayer.Layer):
 		"""Add geometry to this Layer based on the list of lines, using
 		GSegment."""
 		if self.geometry or not self.has_moves:
-			print(f'nope: {self.has_moves}')
 			return
 		self.geometry = Geometry(segments=[], planes=None)
 
 		last = None
 		for line in self.lines:
-			if line.is_xymove():
-				try:
-					self.geometry.segments.append(GSegment(last, line, z=self.z))
-				except (AttributeError, TypeError) as e:
-					raise GCodeException((self,last),
-							f'GSegment {line.lineno}: {line}') from e
+			if last is not None:   #wait until we have two moves in the layer
+				if line.is_xymove():
+					try:
+						self.geometry.segments.append(GSegment(last, line, z=self.z))
+					except (AttributeError, TypeError) as e:
+						raise GCodeException((self,last),
+								f'GSegment {line.lineno}: {line}') from e
 			if line.is_xymove():
 				last = line
 
@@ -66,19 +69,23 @@ class TLayer(gclayer.Layer):
 		bottom.z = bot_z
 		top.z    = top_z
 		self.geometry.planes = Planes(bottom=bottom, top=top)
-		print('reached here')
 
+
+	def in_layer(self, thread: List[Segment]) -> List[Segment]:
+		"""Return a list of the thread segments which are inside this layer."""
+		self.intersect(thread)
+		return [tseg for tseg in thread if self._isecs[tseg]['in_layer']]
 
 	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
 		"""Return a list of GSegments which the given thread segments do not
 		intersect."""
-		self._intersect(thread)
+		self.intersect(thread)
 		return sum([self._isecs[tseg]['nsec_segs'] for tseg in thread], [])
 
 
 	def intersecting(self, thread: List[Segment]) -> List[GSegment]:
 		"""Return a list of GSegments which the given thread segments intersect."""
-		self._intersect(thread)
+		self.intersect(thread)
 		return sum([self._isecs[tseg]['isec_segs'] for tseg in thread], [])
 
 
@@ -87,23 +94,15 @@ class TLayer(gclayer.Layer):
 		segment intersects the layer geometry, ordered by distance to the
 		end point of the thread segment (with the assumption that this the
 		"true" anchor point, as the last location the thread will be stuck down."""
-		self._intersect([threadseg])
-		return sorted(self._isects[tseg],
-				key=lambda p:distance(tseg.end_point.as2d(), p.as2d()))
-		
+		self.intersect([tseg])
+		anchors = sum([self._isecs[tseg][k] for k in ('enter', 'isec_points', 'exit')], [])
+		return sorted(anchors, key=lambda p:distance(tseg.end_point.as2d(), p.as2d()))
 
 
-	def _intersect(self, thread: List[Segment]):
-		#Call this in each of the intersection methods above to cache any
-		# intersections for each thread segment.
 
-		#Want to support:
-		# intersections = layer.intersect(thread)
-		# self.state.thread_avoid(intersections.non_intersecting)
-		# s.add(intersections.non_intersecting)
-		# seg_intersections = intersections.intersecting(thread_seg)
-		# s.add(seg_intersections)
-		# self.state.thread_intersect(next(intersections.anchors))
+	def intersect(self, thread: List[Segment]):
+		"""Call this in each of the intersection methods above to cache any
+		 intersections for each thread segment."""
 		self.add_geometry()
 
 		bot = self.geometry.planes.bottom
@@ -114,9 +113,10 @@ class TLayer(gclayer.Layer):
 			if tseg in self._isecs:
 				continue
 			self._isecs[tseg] = isecs = {
-					'nsec_segs': [],                      #Non-intersecting gcode segments
-					'isec_segs': [], 'isec_points': [],   #Intersecting gcode segments and locations
-					'enter': None, 'exit': None,          #Thread segment entry and/or exit locations
+					'in_layer': False,                  # Is the thread in this layer at all?
+					'nsec_segs': [],                    # Non-intersecting gcode segments
+					'isec_segs': [], 'isec_points': [], # Intersecting gcode segments and locations
+					'enter':     [],  'exit': [],       # Thread segment entry and/or exit locations
 			}
 
 			#Is the thread segment entirely below or above the layer? If so, skip it.
@@ -124,27 +124,29 @@ class TLayer(gclayer.Layer):
 				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
 				continue
 
+			isecs['in_layer'] = True
+
 			#See if the thread segment enters and/or exits the layer
-			isecs['enter'] = t.intersection(bot)
-			isecs['exit']  = t.intersection(top)
+			isecs['enter'] = [tseg.intersection(bot)]
+			isecs['exit']  = [tseg.intersection(top)]
 
 			#And find the gCode lines the thread segment intersects with
 			for gcseg in self.geometry.segments:
 				gcseg.printed = False
-				inter = intersection2d(t, gcseg)
+				inter = gcseg.intersection2d(tseg)
 				if inter:
 					isecs['isec_segs'  ].append(gcseg)
 					isecs['isec_points'].append(inter)
 				else:
-					isects['nsec_segs'].append(gcseg)
+					isecs['nsec_segs'].append(gcseg)
 
 
 
 class Ring:
 	#Defaults
-	_radius = 110
-	_angle  = 0
-	_center = Point(110, 110, 0)
+	_radius = 110  #mm
+	_angle  = 0    #radians
+	_center = Point(110, 110, 0) #mm
 
 	#Default plotting style
 	_style = {
@@ -152,9 +154,9 @@ class Ring:
 		'indicator': {'line': dict(color='blue',  width= 2)},
 	}
 
-	__repr__ = basic_repr('diameter,angle,center')
+	__repr__ = basic_repr('_radius,_angle,_center')
 
-	def __init__(self, radius=_radius, angle=_angle, center=_center, style=None):
+	def __init__(self, radius=_radius, angle:radians=_angle, center=_center, style=None):
 		store_attr(but='style')
 
 		self._angle        = angle
@@ -168,13 +170,17 @@ class Ring:
 				self.style[item].update(style[item])
 
 
+	def __repr__(self):
+		return f'Ring({degrees(self._angle):.2f}°)'
+
+
 	@property
 	def angle(self):
 		return self._angle
 
 
 	@angle.setter
-	def angle(self, new_pos):
+	def angle(self, new_pos:radians):
 		self.set_angle(new_pos)
 
 
@@ -183,7 +189,7 @@ class Ring:
 		return self.angle2point(self.angle)
 
 
-	def set_angle(self, new_angle, direction=None):
+	def set_angle(self, new_angle:radians, direction=None):
 		"""Set a new angle for the ring. Optionally provide a preferred movement
 		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
 		self.initial_angle = self._angle
@@ -198,14 +204,14 @@ class Ring:
 		)
 
 
-	def angle2point(self, angle):
+	def angle2point(self, angle:radians):
 		"""Return an x,y,z=0 location on the ring based on the given angle, without
 		moving the ring. Assumes that the bed's bottom-left corner is (0,0).
 		Doesn't take into account a machine that uses bed movement for the y-axis,
 		but just add the y value to the return from this function."""
 		return Point(
-			cos(radians(angle)) * self.radius + self.center.x,
-			sin(radians(angle)) * self.radius + self.center.y,
+			cos(angle) * self.radius + self.center.x,
+			sin(angle) * self.radius + self.center.y,
 			0
 		)
 
@@ -241,7 +247,7 @@ class Ring:
 
 
 class Bed:
-	__repr__ = basic_repr('anchor_location,size')
+	__repr__ = basic_repr('anchor_location')
 
 	def __init__(self, anchor_location=(0,0), size=(220, 220)):
 		store_attr()
@@ -249,11 +255,13 @@ class Bed:
 
 
 class State:
-	__repr__ = basic_repr('bed,ring')
-	
 	def __init__(self, bed, ring):
 		store_attr()
 		self.anchor = Point(bed.anchor_location[0], bed.anchor_location[1], 0)
+
+
+	def __repr__(self):
+		return f'State(Bed, {self.ring})'
 
 
 	def freeze(self):
@@ -293,17 +301,18 @@ class State:
 
 		return None
 
+
 	def thread_intersect(self, target, set_new_anchor=True, move_ring=True):
 		"""Rotate the ring so that the thread intersects the target Point. By default
 		sets the anchor to the intersection. Return the rotation value."""
 		#Form a half line (basically a ray) from the anchor through the target
-		hl = HalfLine(self.anchor, target)
+		hl = HalfLine(self.anchor.as2d(), target.as2d())
 
 		#Find intersection with the ring; this returns a Segment starting at the anchor
 		ring_point = intersection(hl, self.ring.geometry).end_point
 
 		#Now we need the angle between center->ring and the x axis
-		ring_angle = degrees(angle(self.ring.x_axis, Vector(self.ring.center, ring_point)))
+		ring_angle = angle(self.ring.x_axis, Vector(self.ring.center, ring_point))
 
 		if move_ring:
 			self.ring.set_angle(ring_angle)
@@ -312,13 +321,17 @@ class State:
 			self.anchor = target
 
 		return ring_angle
-		
+
 
 
 class Step:
 	def __init__(self, state, name=''):
 		store_attr()
 		self.gcode = []
+
+
+	def __repr__(self):
+		return f'<Step ({len(self.gcode)} lines)>: [light_sea_green italic]{self.name}[/]\n  {self.state}'
 
 
 	def add(self, gclines):
@@ -337,6 +350,7 @@ class Step:
 			return False
 		#Otherwise store the current state
 		self.state = self.state.freeze()
+		print(repr(self))
 
 
 	def plot(self):
@@ -349,6 +363,11 @@ class Steps:
 		store_attr()
 		self._steps = []
 		self._current_step = None
+
+
+	def __repr__(self):
+		return '\n'.join(map(repr, self._steps))
+
 
 	@property
 	def current(self):
@@ -365,7 +384,7 @@ class Threader:
 		store_attr()
 		self.state = State(Bed(), Ring())
 
-	
+
 	def route_model(self, thread):
 		for layer in self.gcode.layers:
 			self.layer_steps.append(self.route_layer(thread, layer))
@@ -387,7 +406,10 @@ class Threader:
 			A. Move the thread to overlap its end point
 			B. Print over all intersecting gcode segments
 		"""
+		print(f'Route {len(thread)}-segment thread through layer:\n  {layer}')
 		steps = Steps(layer=layer, state=self.state)
+
+		layer.intersect(thread)
 
 		with steps.new_step('Move thread out of the way') as s:
 			#rotate ring to avoid segments it shouldn't intersect
@@ -400,22 +422,27 @@ class Threader:
 		with steps.new_step('Print non-intersecting layer segments') as s:
 			s.add(layer.non_intersecting(thread))
 
-		for thread_seg in thread:
-			seg_intersections = layer.intersecting([thread_seg])
-
-			with steps.new_step('Move thread to overlap next anchor') as s:
-				self.state.thread_intersect(layer.anchors(thread_seg))
+		for thread_seg in layer.in_layer(thread):
+			anchors = layer.anchors(thread_seg)
+			if anchors:
+				with steps.new_step('Move thread to overlap last anchor') as s:
+					self.state.thread_intersect(anchors[0])
 
 			with steps.new_step('Print overlapping layers segments')	as s:
 				s.add(layer.intersecting([thread_seg]))
+
+		print('[yellow]Done with thread for this layer[/];',
+				len([s for s in layer.geometry.segments if not s.printed]),
+				'gcode lines left')
 
 		return steps
 
 
 if __name__ == "__main__":
-	import gcode                                                                     
-	import numpy as np                                                                         
-	from Geometry3D import Segment, Point                                                      
+	import gcode
+	import numpy as np
+	from Geometry3D import Segment, Point
+	from danutil import unpickle
 	tpath = np.array(unpickle('/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle')) * 10
 	thread_transform = [131.164, 110.421, 0]
 	tpath += [thread_transform, thread_transform]
@@ -423,4 +450,5 @@ if __name__ == "__main__":
 	g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
 			layer_class=TLayer)
 	t = Threader(g)
-	t.route_layer(thread_geom, g.layers[43])
+	steps = t.route_layer(thread_geom, g.layers[43])
+	#print(steps)

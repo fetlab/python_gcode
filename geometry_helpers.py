@@ -1,21 +1,12 @@
 import Geometry3D
-from Geometry3D import Point, Segment, intersection
-from pint.registry_helpers import check
-from functools import wraps
-from units import *
+from Geometry3D import Point, Segment, Vector
 from gcline import Line
 from dataclasses import make_dataclass
 from copy import deepcopy
-from fastcore.basics import *
+from fastcore.basics import patch
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
-
-
-class GCodeException(Exception):
-	def __init__(self, obj, message):
-		self.obj = obj
-		self.message = message
 
 
 #---- Add as2d() methods to default geometry
@@ -43,21 +34,38 @@ class HalfLine(Geometry3D.HalfLine):
 				GPoint.as2d(self._a),
 				GPoint.as2d(self._b))
 
+
+	def __repr__(self):
+		return "H({}, {})".format(self.point, self.vector)
+
 # ----
+
+#Fix unrestrained floating point printing, shorten class names
+@patch
+def __repr__(self:Point):
+	return "P({:.2f}, {:.2f}, {:.2f})".format(self.x, self.y, self.z)
+
+@patch
+def __repr__(self:Vector):
+	return "V({:.2f}, {:.2f}, {:.2f})".format(*self._v)
+
+@patch
+def __repr__(self:Segment):
+	return "S({}, {})".format(self.start_point, self.end_point)
 
 
 class GPoint(Geometry3D.Point):
-	def __init__(self, *args):
+	def __init__(self, *args, z=0):
 		"""Pass Geometry3D.Point arguments or a gcline.Line and optionally a *z*
 		argument. If *z* is missing it will be set to 0."""
 		if len(args) == 1 and isinstance(args[0], Line):
 			l = args[0]
 			if not (l.code in ('G0', 'G1') and 'X' in l.args and 'Y' in l.args):
 				raise ValueError(f"Line instance isn't an X or Y move:\n\t{args[0]}")
-			super().__init__(l.args['X'], l.args['Y'], args.get('z', args.get('Z', 0)))
+			super().__init__(l.args['X'], l.args['Y'], z)
 			self.line = l
 		else:
-			super().__init__(*args)
+			super().__init__(*args, z)
 			self.line = None
 
 
@@ -71,8 +79,8 @@ class GPoint(Geometry3D.Point):
 
 class GSegment(Geometry3D.Segment):
 	def __init__(self, line1:Line, line2:Line, z=0):
-		a = Point(line1, z=z)
-		b = Point(line2, z=z)
+		a = GPoint(line1, z=z)
+		b = GPoint(line2, z=z)
 
 		#Copied init code to avoid the deepcopy operation
 		if a == b:
@@ -86,7 +94,7 @@ class GSegment(Geometry3D.Segment):
 		return Geometry3D.intersection(self.as2d(), other.as2d())
 
 
-
+"""
 def unitwrapper(obj):
 	@wraps(obj)
 	def wrapper(*args, **kwargs):
@@ -98,3 +106,4 @@ length = ureg.get_dimensionality('[length]')
 angle  = 0*ureg.degrees
 # class Point(Geometry3D.Point):
 # 	__init__ = check(
+"""

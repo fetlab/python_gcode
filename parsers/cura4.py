@@ -76,7 +76,6 @@ def parse(lines, layer_class=Layer):
 	# to the preamble
 	preamble.extend(layergroups.pop(0))
 
-	print(f'layer_class is {layer_class}')
 	layergroups = [layer_class(g) for g in layergroups]
 
 	#Manually set number of layer 0 because the ';LAYER' comment is now attached
