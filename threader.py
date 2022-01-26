@@ -1,12 +1,13 @@
 import gclayer
+import plotly.graph_objects as go
 from copy import deepcopy
-from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance, angle
+from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance
 from math import radians, sin, cos, degrees
 from typing import List
-from geometry_helpers import GSegment, Geometry, Planes, HalfLine
+from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy
 from fastcore.basics import basic_repr, store_attr
 from rich import print
-#from loguru import logger
+from math import atan2
 
 """TODO:
 	* [X] layer.intersect(thread)
@@ -22,6 +23,14 @@ from rich import print
 					* But a Segment represents two lines of gcode as vertices....
 	* [X] Order isecs['isec_points'] in the Layer.anchors() method
 """
+
+def style_update(old_style, new_style):
+	style = deepcopy(old_style)
+	if new_style is not None:
+		for item in new_style:
+			style[item].update(new_style[item])
+	return style
+
 
 class GCodeException(Exception):
 	def __init__(self, obj, message):
@@ -150,8 +159,8 @@ class Ring:
 
 	#Default plotting style
 	_style = {
-		'ring':      {'line': dict(color='white', width=10)},
-		'indicator': {'line': dict(color='blue',  width= 2)},
+		'ring':      {'line': dict(color='white', width=10), 'opacity':.25},
+		'indicator': {'line': dict(color='blue',  width= 4)},
 	}
 
 	__repr__ = basic_repr('_radius,_angle,_center')
@@ -162,12 +171,11 @@ class Ring:
 		self._angle        = angle
 		self.initial_angle = angle
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=50)
-		self.x_axis        = Vector(self.center, Point(self.radius, 0, 0))
+		self.x_axis        = Vector(self.center,
+																Point(self.center.x + self.radius,
+																			self.center.y, self.center.z))
 
-		self.style = deepcopy(self._style)
-		if style is not None:
-			for item in style:
-				self.style[item].update(style[item])
+		self.style = style_update(self._style, style)
 
 
 	def __repr__(self):
@@ -201,6 +209,7 @@ class Ring:
 		return Point(
 			self.center.x + cos(self.angle)*(self.radius+offset),
 			self.center.y + sin(self.angle)*(self.radius+offset),
+			0
 		)
 
 
@@ -222,42 +231,72 @@ class Ring:
 		pass
 
 
-	def plot(self, fig):
+	def plot(self, fig, style=None):
+		style = style_update(self.style, style)
+		"""
 		fig.add_shape(
 			name='ring',
 			type='circle',
 			xref='x', yref='y',
-			x1=self.center.x-self.diameter/2,
-			y1=self.center.y-self.diameter/2,
-			x2=self.center.x+self.diameter/2,
-			y2=self.center.y+self.diameter/2,
-			**self.style['ring'],
+			x0=self.center.x-self.radius,
+			y0=self.center.y-self.radius,
+			x1=self.center.x+self.radius,
+			y1=self.center.y+self.radius,
+			**style['ring'],
 		)
-		c1 = self.carrier_location()
-		c2 = self.carrier_location(offset=3)
+		"""
+		fig.add_trace(go.Scatter(**segs_xy(*list(self.geometry.segments()), **style['ring'])))
+		ringwidth = style['ring']['line']['width']/2
+		c1 = self.carrier_location(offset=-ringwidth/2)
+		c2 = self.carrier_location(offset=ringwidth/2)
 		fig.add_shape(
 			name='ring_indicator',
 			type='line',
 			xref='x', yref='y',
-			x1=c1.x, y1=c1.y,
-			x2=c2.x, y2=c2.y,
-			**self.style['indicator'],
+			x0=c1.x, y0=c1.y,
+			x1=c2.x, y1=c2.y,
+			**style['indicator'],
 		)
 
 
 
 class Bed:
-	__repr__ = basic_repr('anchor_location')
+	__repr__ = basic_repr('anchor')
+	#Default plotting style
+	_style = {
+			'bed': {'line': dict(color='rgba(0,0,0,0)'), 'fillcolor': 'LightSkyBlue',
+				'opacity':.25},
+	}
 
-	def __init__(self, anchor_location=(0,0), size=(220, 220)):
-		store_attr()
+	def __init__(self, anchor=(0,0), size=(220, 220), style=None):
+		self.anchor = GPoint(*anchor)
+		self.size   = size
+		self.style = style_update(self._style, style)
+
+
+	def plot(self, fig, style=None):
+		style = style_update(self.style, style)
+		fig.add_shape(
+			name='bed',
+			type='rect',
+			xref='x', yref='y',
+			x0=0, y0=0,
+			x1=self.size[0], y1=self.size[1],
+			**style['bed'],
+		)
 
 
 
 class State:
-	def __init__(self, bed, ring):
-		store_attr()
-		self.anchor = Point(bed.anchor_location[0], bed.anchor_location[1], 0)
+	_style = {
+		'thread': {'line': dict(color='white', width=1, dash='dot')},
+		'anchor': {'mode': 'markers', 'marker': dict(color='red', symbol='x', size=8)},
+	}
+
+	def __init__(self, bed, ring, style=None):
+		store_attr(but='style')
+		self.style = style_update(self._style, style)
+		self.anchor = Point(bed.anchor[0], bed.anchor[1], 0)
 
 
 	def __repr__(self):
@@ -265,6 +304,7 @@ class State:
 
 
 	def freeze(self):
+		"""Return a copy of this State object, capturing the state."""
 		return deepcopy(self)
 
 
@@ -307,12 +347,16 @@ class State:
 		sets the anchor to the intersection. Return the rotation value."""
 		#Form a half line (basically a ray) from the anchor through the target
 		hl = HalfLine(self.anchor.as2d(), target.as2d())
+		if distance(self.anchor, self.ring.center) > self.ring.radius:
+			ring_point = intersection(hl, self.ring.geometry).end_point
+		else:
+			ring_point = intersection(hl, self.ring.geometry).start_point
 
-		#Find intersection with the ring; this returns a Segment starting at the anchor
-		ring_point = intersection(hl, self.ring.geometry).end_point
+		self.hl_parts = deepcopy([self.anchor, target])
+		self.ring_point = ring_point
 
 		#Now we need the angle between center->ring and the x axis
-		ring_angle = angle(self.ring.x_axis, Vector(self.ring.center, ring_point))
+		ring_angle = atan2(ring_point.y - self.ring.center.y, ring_point.x - self.ring.center.x)
 
 		if move_ring:
 			self.ring.set_angle(ring_angle)
@@ -323,25 +367,44 @@ class State:
 		return ring_angle
 
 
+	def plot_thread_to_ring(self, fig, style=None):
+		#Plot a thread from the current anchor to the carrier
+		style = style_update(self.style, style)
+		fig.add_trace(go.Scatter(**segs_xy(self.thread(), **style['thread'])))
+
+
+	def plot_anchor(self, fig, style=None):
+		style = style_update(self.style, style)
+		fig.add_trace(go.Scatter(x=[self.anchor.x], y=[self.anchor.y], **style['anchor']))
+
+
 
 class Step:
-	def __init__(self, state, name=''):
-		store_attr()
-		self.gcode = []
+	#Default plotting style
+	_style = {
+		'gc_segs': {'line': dict(color='green',  width=1)},
+		'thread':  {'line': dict(color='yellow', width=1, dash='dot')},
+	}
+
+	def __init__(self, state, name='', style=None):
+		store_attr(but='style')
+		self.gcsegs = []
+		self.style  = style_update(self._style, style)
 
 
 	def __repr__(self):
-		return f'<Step ({len(self.gcode)} lines)>: [light_sea_green italic]{self.name}[/]\n  {self.state}'
+		return f'<Step ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.state}'
 
 
-	def add(self, gclines):
-		for l in gclines:
-			if not l.printed:
-				self.gcode.append(l)
-				l.printed = True
+	def add(self, gcsegs):
+		for seg in gcsegs:
+			if not seg.printed:
+				self.gcsegs.append(seg)
+				seg.printed = True
 
 
 	def __enter__(self):
+		print(f'Start: [light_sea_green italic]{self.name}')
 		return self
 
 
@@ -350,31 +413,52 @@ class Step:
 			return False
 		#Otherwise store the current state
 		self.state = self.state.freeze()
-		print(repr(self))
+		print('End:', repr(self))
 
 
-	def plot(self):
-		#Plot things in order
-		raise NotImplementedError
+	def plot_gcsegments(self, fig, style=None):
+		#Plot gcode segments. The 'None' makes a break in a line so we can use
+		# just one add_trace() call.
+		style = style_update(self.style, style)
+		segs = {'x': [], 'y': []}
+		for seg in self.gcsegs:
+			segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
+			segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
+		fig.add_trace(go.Scatter(**segs, name='gc_segs', **style['gc_segs']))
 
 
+	def plot_thread(self, fig, start:Point, style=None):
+		#Plot a thread segment, starting at 'start'
+		style = style_update(self.style, style)
+		fig.add_trace(go.Scatter(
+			x=[start.x, self.state.anchor.x],
+			y=[start.y, self.state.anchor.y],
+			**style['thread'],
+		))
+
+
+
+#TODO: Change new_step() to return Steps class with _current_step set to the
+# new Step object. Then raise something like NoChangesException in different
+# steps so that we don't add an empty Step to steps[].
 class Steps:
 	def __init__(self, layer, state):
 		store_attr()
-		self._steps = []
+		self.steps = []
 		self._current_step = None
 
 
 	def __repr__(self):
-		return '\n'.join(map(repr, self._steps))
+		return '\n'.join(map(repr, self.steps))
 
 
 	@property
 	def current(self):
-		return self._steps[-1] if self._steps else None
+		return self.steps[-1] if self.steps else None
+
 
 	def new_step(self, name=''):
-		self._steps.append(Step(self.state, name))
+		self.steps.append(Step(self.state, name))
 		return self.current
 
 
@@ -409,8 +493,6 @@ class Threader:
 		print(f'Route {len(thread)}-segment thread through layer:\n  {layer}')
 		steps = Steps(layer=layer, state=self.state)
 
-		layer.intersect(thread)
-
 		with steps.new_step('Move thread out of the way') as s:
 			#rotate ring to avoid segments it shouldn't intersect
 			#context manager should store state when this step context finishes,
@@ -426,7 +508,9 @@ class Threader:
 			anchors = layer.anchors(thread_seg)
 			if anchors:
 				with steps.new_step('Move thread to overlap last anchor') as s:
+					print(f'  {self.state.anchor} [green]→ anchor:[/] {anchors[0]}')
 					self.state.thread_intersect(anchors[0])
+					print(f'  [green]→ new anchor:[/] {self.state.anchor}')
 
 			with steps.new_step('Print overlapping layers segments')	as s:
 				s.add(layer.intersecting([thread_seg]))
@@ -435,7 +519,17 @@ class Threader:
 				len([s for s in layer.geometry.segments if not s.printed]),
 				'gcode lines left')
 
-		return steps
+		return steps.steps
+
+
+"""
+TODO:
+Need to have a renderer that will take the steps and the associated Layer and
+spit out the final gcode. It needs to take into account preambles, postambles,
+and non-extrusion lines, and also to deal with out-of-order extrusions so it
+can move to the start of the necessary line. Possibly there needs to be some
+retraction along the way.
+"""
 
 
 if __name__ == "__main__":
@@ -450,5 +544,5 @@ if __name__ == "__main__":
 	g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
 			layer_class=TLayer)
 	t = Threader(g)
-	steps = t.route_layer(thread_geom, g.layers[43])
+	steps = t.route_layer(thread_geom, g.layers[3])
 	#print(steps)

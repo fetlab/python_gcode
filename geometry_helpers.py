@@ -1,5 +1,5 @@
 import Geometry3D
-from Geometry3D import Point, Segment, Vector
+from Geometry3D import Vector, Point, Segment
 from gcline import Line
 from dataclasses import make_dataclass
 from copy import deepcopy
@@ -8,16 +8,53 @@ from fastcore.basics import patch
 Geometry = make_dataclass('Geometry', ['segments', 'planes'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
 
+#Help in plotting
+def segs_xyz(*segs, **kwargs):
+	#Plot gcode segments. The 'None' makes a break in a line so we can use
+	# just one add_trace() call.
+	x, y, z = [], [], []
+	for s in segs:
+		x.extend([s.start_point.x, s.end_point.x, None])
+		y.extend([s.start_point.y, s.end_point.y, None])
+		z.extend([s.start_point.z, s.end_point.z, None])
+	return dict(x=x, y=y, z=z, **kwargs)
 
-#---- Add as2d() methods to default geometry
 
+def segs_xy(*segs, **kwargs):
+	d = segs_xyz(*segs, **kwargs)
+	del(d['z'])
+	return d
+
+
+#Monkey-patch Point
+@patch
+def __repr__(self:Point):
+	return "P({:.2f}, {:.2f}, {:.2f})".format(self.x, self.y, self.z)
 @patch
 def as2d(self:Point):
 	return Point(self.x, self.y, 0)
+@patch
+def xyz(self:Point):
+	return self.x, self.y, self.z
+@patch
+def xy(self:Point):
+	return self.x, self.y
 
+
+#Monkey-patch Segment
+@patch
+def __repr__(self:Segment):
+	return "S({}, {})".format(self.start_point, self.end_point)
 @patch
 def as2d(self:Segment):
 	return Segment(self.start_point.as2d(), self.end_point.as2d())
+@patch
+def xyz(self:Segment):
+	return tuple(zip(self.start_point.xyz, self.end_point.xyz))
+@patch
+def xy(self:Segment):
+	return tuple(zip(self.start_point.xy, self.end_point.xy))
+
 
 
 class HalfLine(Geometry3D.HalfLine):
@@ -38,23 +75,14 @@ class HalfLine(Geometry3D.HalfLine):
 	def __repr__(self):
 		return "H({}, {})".format(self.point, self.vector)
 
-# ----
-
-#Fix unrestrained floating point printing, shorten class names
-@patch
-def __repr__(self:Point):
-	return "P({:.2f}, {:.2f}, {:.2f})".format(self.x, self.y, self.z)
 
 @patch
 def __repr__(self:Vector):
 	return "V({:.2f}, {:.2f}, {:.2f})".format(*self._v)
 
-@patch
-def __repr__(self:Segment):
-	return "S({}, {})".format(self.start_point, self.end_point)
 
 
-class GPoint(Geometry3D.Point):
+class GPoint(Point):
 	def __init__(self, *args, z=0):
 		"""Pass Geometry3D.Point arguments or a gcline.Line and optionally a *z*
 		argument. If *z* is missing it will be set to 0."""
