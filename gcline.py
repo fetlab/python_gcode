@@ -1,4 +1,4 @@
-import re
+import re, sys
 
 class Line():
 	def __init__(self, line='', lineno='', code=None, args={}, comment=None):
@@ -49,6 +49,10 @@ class Line():
 								self.args[arg[0]] = None
 						else:
 							self.args[None] = arg
+
+
+	def __hash__(self):
+		return hash(f'{self.lineno} {self.line}')
 
 
 	def __repr__(self):

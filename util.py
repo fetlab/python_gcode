@@ -1,4 +1,6 @@
 from collections import namedtuple
+from time import time
+from functools import wraps
 
 Point3 = namedtuple('Point3', 'x y z')
 
@@ -52,3 +54,14 @@ def listsplit2(l, sepfunc, maxsplit=-1, keepsep='>'):
 	if end:
 		r.append(l[start:end+1])
 	return r
+
+
+def timing(f):
+	@wraps(f)
+	def wrap(*args, **kwargs):
+		start = time()
+		result = f(*args, **kwargs)
+		end = time()
+		print(f'{f.__name__} took {end-start:2.4f}s')
+		return result
+	return wrap

@@ -1,5 +1,4 @@
-import gclayer
-import plotly.graph_objects as go
+import plotly, plotly.graph_objects as go
 from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance
 from math import radians, sin, cos, degrees
@@ -8,20 +7,23 @@ from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_
 from fastcore.basics import basic_repr, store_attr
 from rich import print
 from math import atan2
+from parsers.cura4 import Cura4Layer
+from time import time
 
 """TODO:
 	* [X] layer.intersect(thread)
 	* [ ] gcode generator for ring
-	* [ ] plot() methods
+	* [X] plot() methods
 	* [X] thread_avoid()
 	* [X] thread_intersect
-	* [ ] wrap Geometry3D functions with units; or maybe get rid of units again?
+	* [X] wrap Geometry3D functions with units; or maybe get rid of units again?
 	* [X] think about how to represent a layer as a set of time-ordered segments
 				that we can intersect but also as something that has non-geometry components
 				* Also note the challenge of needing to have gCode be Segments but keeping the
 					gcode info such as move speed and extrusion amount
 					* But a Segment represents two lines of gcode as vertices....
 	* [X] Order isecs['isec_points'] in the Layer.anchors() method
+	* [ ] Take care of moving to start point of a Segment after an order change
 """
 
 def style_update(old_style, new_style):
@@ -39,7 +41,7 @@ class GCodeException(Exception):
 
 
 
-class TLayer(gclayer.Layer):
+class TLayer(Cura4Layer):
 	def __init__(self, *args, layer_height=0.4, **kwargs):
 		super().__init__(*args, **kwargs)
 		self.geometry = None
@@ -47,19 +49,54 @@ class TLayer(gclayer.Layer):
 		self._isecs = {}
 
 
+	def plot(self, fig,
+			move_colors=plotly.colors.qualitative.Set2,
+			extrude_colors=plotly.colors.qualitative.Dark2):
+		self.add_geometry()
+		colors = zip(extrude_colors, move_colors)
+
+		for name, part in self.parts.items():
+			colorD, colorL = next(colors)
+
+			Esegs = {'x': [], 'y': []}
+			Msegs = {'x': [], 'y': []}
+			for line in part:
+				try:
+					seg = line.segment
+				except AttributeError:
+					#print(line)
+					continue
+
+				segs = Esegs if line.is_xyextrude() else Msegs
+				segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
+				segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
+
+			if Esegs['x']:
+				fig.add_trace(go.Scatter(**Esegs, mode='lines', name=repr(name).lower(),
+					line=dict(color=colorD)))
+			if Msegs['x']:
+				fig.add_trace(go.Scatter(**Msegs, mode='lines', name=repr(name).lower(),
+					line=dict(color=colorL, dash='dot')))
+
+
 	def add_geometry(self):
 		"""Add geometry to this Layer based on the list of lines, using
 		GSegment."""
 		if self.geometry or not self.has_moves:
 			return
-		self.geometry = Geometry(segments=[], planes=None)
+		self.geometry = Geometry(segments=[], planes=None, outline=None)
+		#TODO: add outline of layer using the layer.part with the largest extents;
+		# need to be able to test intersections, but it's likely a concave polygone
+		# with holes so complicated.
 
 		last = None
 		for line in self.lines:
 			if last is not None:   #wait until we have two moves in the layer
 				if line.is_xymove():
+					seg = GSegment(last, line, z=self.z)
 					try:
-						self.geometry.segments.append(GSegment(last, line, z=self.z))
+						line.segment = seg
+						self.geometry.segments.append(seg)
 					except (AttributeError, TypeError) as e:
 						raise GCodeException((self,last),
 								f'GSegment {line.lineno}: {line}') from e
@@ -81,7 +118,9 @@ class TLayer(gclayer.Layer):
 
 
 	def in_layer(self, thread: List[Segment]) -> List[Segment]:
-		"""Return a list of the thread segments which are inside this layer."""
+		"""Return a list of the thread segments which are inside this layer. Note
+		that it's not guaranteed that they actually interact with the geometry, but
+		that the ends of the segment are not both above or below the layer."""
 		self.intersect(thread)
 		return [tseg for tseg in thread if self._isecs[tseg]['in_layer']]
 
@@ -133,12 +172,11 @@ class TLayer(gclayer.Layer):
 				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
 				continue
 
-			isecs['in_layer'] = True
-
 			#See if the thread segment enters and/or exits the layer
 			isecs['enter'] = [tseg.intersection(bot)]
 			isecs['exit']  = [tseg.intersection(top)]
 
+			start = time()
 			#And find the gCode lines the thread segment intersects with
 			for gcseg in self.geometry.segments:
 				gcseg.printed = False
@@ -149,6 +187,9 @@ class TLayer(gclayer.Layer):
 				else:
 					isecs['nsec_segs'].append(gcseg)
 
+			print(f'Intersecting took {time()-start:2.4}s')
+
+			isecs['in_layer'] = bool(isecs['isec_segs'])
 
 
 class Ring:
@@ -289,8 +330,8 @@ class Bed:
 
 class State:
 	_style = {
-		'thread': {'line': dict(color='white', width=1, dash='dot')},
-		'anchor': {'mode': 'markers', 'marker': dict(color='red', symbol='x', size=8)},
+		'thread': {'mode':'lines', 'line': dict(color='white', width=1, dash='dot')},
+		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=2)},
 	}
 
 	def __init__(self, bed, ring, style=None):
@@ -382,8 +423,8 @@ class State:
 class Step:
 	#Default plotting style
 	_style = {
-		'gc_segs': {'line': dict(color='green',  width=1)},
-		'thread':  {'line': dict(color='yellow', width=1, dash='dot')},
+		'gc_segs': {'mode':'lines', 'line': dict(color='green',  width=1)},
+		'thread':  {'mode':'lines', 'line': dict(color='yellow', width=1, dash='dot')},
 	}
 
 	def __init__(self, state, name='', style=None):
@@ -413,13 +454,14 @@ class Step:
 			return False
 		#Otherwise store the current state
 		self.state = self.state.freeze()
-		print('End:', repr(self))
 
 
 	def plot_gcsegments(self, fig, style=None):
 		#Plot gcode segments. The 'None' makes a break in a line so we can use
 		# just one add_trace() call.
 		style = style_update(self.style, style)
+		if len(self.gcsegs) < 10:
+			style['gc_segs']['line']['width'] = 3
 		segs = {'x': [], 'y': []}
 		for seg in self.gcsegs:
 			segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
@@ -481,25 +523,19 @@ class Threader:
 		gcode; for example, printing all of the non-thread-intersecting segments
 		would be one "step".
 		"""
-		"""
-		Gcode operations; each is one step:
-		1. Move the thread out of the way
-		2. Print all gcode segments that don't intersect the thread in this layer
-		3. Repeat for each segment of thread, starting with where the thread enters
-		 	 the layer:
-			A. Move the thread to overlap its end point
-			B. Print over all intersecting gcode segments
-		"""
 		print(f'Route {len(thread)}-segment thread through layer:\n  {layer}')
 		steps = Steps(layer=layer, state=self.state)
 
-		with steps.new_step('Move thread out of the way') as s:
-			#rotate ring to avoid segments it shouldn't intersect
-			#context manager should store state when this step context finishes,
-			# so we should just be able to rotate the ring
-			#To rotate ring, we need to know: current anchor location and things thread
-			# shouldn't intersect
-			self.state.thread_avoid(layer.non_intersecting(thread))
+		if not layer.in_layer(thread):
+			print('Thread not in layer at all')
+		else:
+			with steps.new_step('Move thread out of the way') as s:
+				#rotate ring to avoid segments it shouldn't intersect
+				#context manager should store state when this step context finishes,
+				# so we should just be able to rotate the ring
+				#To rotate ring, we need to know: current anchor location and things thread
+				# shouldn't intersect
+				self.state.thread_avoid(layer.non_intersecting(thread))
 
 		with steps.new_step('Print non-intersecting layer segments') as s:
 			s.add(layer.non_intersecting(thread))

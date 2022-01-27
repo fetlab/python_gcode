@@ -3,9 +3,9 @@ from Geometry3D import Vector, Point, Segment
 from gcline import Line
 from dataclasses import make_dataclass
 from copy import deepcopy
-from fastcore.basics import patch
+from fastcore.basics import patch, store_attr
 
-Geometry = make_dataclass('Geometry', ['segments', 'planes'])
+Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
 
 #Help in plotting
@@ -107,6 +107,9 @@ class GPoint(Point):
 
 class GSegment(Geometry3D.Segment):
 	def __init__(self, line1:Line, line2:Line, z=0):
+		self.line1 = line1
+		self.line2 = line2
+
 		a = GPoint(line1, z=z)
 		b = GPoint(line2, z=z)
 

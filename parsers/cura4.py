@@ -44,10 +44,11 @@ class Cura4Layer(Layer):
 	Cura Gcode as of 4.12.1 has the same pattern every layer except layer 0.
 	"""
 	def __init__(self, lines=[], layernum=None):
-		if layernum > 0:
-			self.parts = listsplit(lines,
-					lambda l: l.line.startswith(';TYPE:') or l.line.startswith(';MESH'),
-					keepsep='>', minsize=2)
+		super().__init__(lines, layernum)
+		parts = listsplit(lines,
+				lambda l: l.line.startswith(';TYPE:') or l.line.startswith(';MESH'),
+				keepsep='>', minsize=1)
+		self.parts = {lines[0]: lines for lines in parts}
 
 
 
@@ -56,7 +57,7 @@ def detect(lines):
 
 
 #Convention is that preamble "layer" is -1, first print layer is 0
-def parse(lines, layer_class=Layer):
+def parse(lines, layer_class=Layer, line_class=Line):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
 	glines = [Line(l, lineno=n+1) for n,l in enumerate(lines)]
 

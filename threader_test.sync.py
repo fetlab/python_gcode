@@ -21,7 +21,7 @@ from danutil import unpickle
 from importlib import reload
 import plotly.graph_objects as go
 from IPython.core.display import display, HTML
-from plotly.offline import plot, iplot, init_notebook_mode
+from plotly.offline import init_notebook_mode
 init_notebook_mode(connected=True)
 
 
@@ -52,7 +52,7 @@ thread_geom = tuple([Segment(Point(*s), Point(*e)) for s,e in tpath])
 g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
 		layer_class=TLayer)
 t = Threader(g)
-steps = t.route_layer(thread_geom, g.layers[43])
+steps = t.route_layer(thread_geom, g.layers[45])
 #print(steps)
 page_wide()
 
@@ -71,14 +71,14 @@ for stepnum,step in enumerate(steps):
 
 	step.state.plot_anchor(fig)
 
-	if hasattr(step.state, 'hl_parts'):
+	# if hasattr(step.state, 'hl_parts'):
 
-		a, b = step.state.hl_parts
-		fig.add_trace(go.Scatter(x=[a.x, b.x], y=[a.y, b.y], line=dict(color='red',
-			width=4, dash='dot')))
-		fig.add_trace(go.Scatter(x=[step.state.ring_point.x],
-			y=[step.state.ring_point.y], mode='markers',
-			marker=dict(color='limegreen', symbol='circle', size=8)))
+	# 	a, b = step.state.hl_parts
+	# 	fig.add_trace(go.Scatter(x=[a.x, b.x], y=[a.y, b.y], line=dict(color='red',
+	# 		width=4, dash='dot')))
+	# 	fig.add_trace(go.Scatter(x=[step.state.ring_point.x],
+	# 		y=[step.state.ring_point.y], mode='markers',
+	# 		marker=dict(color='limegreen', symbol='circle', size=8)))
 
 	step.state.plot_thread_to_ring(fig)
 	step.plot_thread(fig, anchor)
@@ -92,3 +92,23 @@ for stepnum,step in enumerate(steps):
 			margin=dict(l=0, r=20, b=0, t=0, pad=0),
 			showlegend=False,)
 	fig.show('notebook')
+
+# %%
+import threader, geometry_helpers, parsers.cura4
+reload(parsers.cura4)
+reload(geometry_helpers)
+reload(threader)
+from threader import TLayer, Threader
+
+g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
+		layer_class=TLayer)
+
+fig = go.Figure()
+g.layers[1].plot(fig)
+
+fig.update_layout(template='plotly_dark',# autosize=False,
+		yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
+		margin=dict(l=0, r=20, b=0, t=40, pad=0),
+)
+
+fig.show('notebook')
