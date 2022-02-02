@@ -11,6 +11,7 @@
 #     language: python
 #     name: python3
 # ---
+
 # %%
 #turn off autosave since we sync from vim
 # %autosave 0
@@ -23,6 +24,8 @@ import plotly.graph_objects as go
 from IPython.core.display import display, HTML
 from plotly.offline import init_notebook_mode
 init_notebook_mode(connected=True)
+#suppress scientific notation
+np.set_printoptions(suppress=True, precision=2)
 
 
 # %%
@@ -44,7 +47,9 @@ import threader, geometry_helpers
 reload(geometry_helpers)
 reload(threader)
 from threader import TLayer, Threader
+page_wide()
 
+# %%
 tpath = np.array(unpickle('/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle')) * 10
 thread_transform = [131.164, 110.421, 0]
 tpath += [thread_transform, thread_transform]
@@ -54,8 +59,15 @@ g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
 t = Threader(g)
 steps = t.route_layer(thread_geom, g.layers[45])
 #print(steps)
-page_wide()
 
+# %%
+tpath
+# array([[[ 50.14,  74.74,  -0.  ], [ 83.34, 114.49,   9.97]],
+#        [[ 83.34, 114.49,   9.97], [147.5 , 114.49,   9.97]],
+#        [[147.5 , 114.49,   9.97], [159.14, 114.49,  16.69]],
+#        [[159.14, 114.49,  16.69], [159.05, 128.12,  61.18]]])
+
+# %%
 anchor = steps[0].state.bed.anchor
 for stepnum,step in enumerate(steps):
 	print(f'Step {stepnum}: {step.name}')
@@ -65,8 +77,8 @@ for stepnum,step in enumerate(steps):
 
 	for i in range(0, stepnum):
 		steps[i].plot_gcsegments(fig, style={'gc_segs': {'line': dict(color='gray')}})
-		#steps[i].plot_thread(fig, steps[i-1].state.anchor,
-		#		style={'thread': {'line':dict(color='blue')}})
+		steps[i].plot_thread(fig, steps[i-1].state.anchor,
+				style={'thread': {'line':dict(color='blue')}})
 	step.plot_gcsegments(fig)
 
 	step.state.plot_anchor(fig)

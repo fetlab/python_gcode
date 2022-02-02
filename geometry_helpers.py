@@ -4,6 +4,7 @@ from gcline import Line
 from dataclasses import make_dataclass
 from copy import deepcopy
 from fastcore.basics import patch, store_attr
+from functools import cache
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
@@ -121,8 +122,15 @@ class GSegment(Geometry3D.Segment):
 		self.end_point = b
 
 
+	#TODO: figure out disk-persistent cache to speed this up
+	@cache
 	def intersection2d(self, other):
 		return Geometry3D.intersection(self.as2d(), other.as2d())
+
+
+	@cache
+	def intersection(self, other):
+		return super().intersection(other)
 
 
 """

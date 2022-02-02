@@ -73,10 +73,10 @@ class TLayer(Cura4Layer):
 
 			if Esegs['x']:
 				fig.add_trace(go.Scatter(**Esegs, mode='lines', name=repr(name).lower(),
-					line=dict(color=colorD)))
+					line=dict(color=colorD), opacity=.5))
 			if Msegs['x']:
 				fig.add_trace(go.Scatter(**Msegs, mode='lines', name=repr(name).lower(),
-					line=dict(color=colorL, dash='dot')))
+					line=dict(color=colorL, dash='dot'), opacity=.5))
 
 
 	def add_geometry(self):
@@ -145,7 +145,6 @@ class TLayer(Cura4Layer):
 		self.intersect([tseg])
 		anchors = sum([self._isecs[tseg][k] for k in ('enter', 'isec_points', 'exit')], [])
 		return sorted(anchors, key=lambda p:distance(tseg.end_point.as2d(), p.as2d()))
-
 
 
 	def intersect(self, thread: List[Segment]):
@@ -542,14 +541,16 @@ class Threader:
 
 		for thread_seg in layer.in_layer(thread):
 			anchors = layer.anchors(thread_seg)
-			if anchors:
+			print(f'Segment: {thread_seg}')
+			print(f'\tanchors: {anchors}')
+			for anchor in anchors:
 				with steps.new_step('Move thread to overlap last anchor') as s:
 					print(f'  {self.state.anchor} [green]→ anchor:[/] {anchors[0]}')
-					self.state.thread_intersect(anchors[0])
+					self.state.thread_intersect(anchor)
 					print(f'  [green]→ new anchor:[/] {self.state.anchor}')
 
-			with steps.new_step('Print overlapping layers segments')	as s:
-				s.add(layer.intersecting([thread_seg]))
+				with steps.new_step('Print overlapping layers segments')	as s:
+					s.add(layer.intersecting([thread_seg]))
 
 		print('[yellow]Done with thread for this layer[/];',
 				len([s for s in layer.geometry.segments if not s.printed]),
