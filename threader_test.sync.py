@@ -17,7 +17,7 @@
 # %autosave 0
 import gcode
 import numpy as np
-from Geometry3D import Segment, Point
+from Geometry3D import Point
 from danutil import unpickle
 from importlib import reload
 import plotly.graph_objects as go
@@ -53,19 +53,12 @@ page_wide()
 tpath = np.array(unpickle('/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle')) * 10
 thread_transform = [131.164, 110.421, 0]
 tpath += [thread_transform, thread_transform]
-thread_geom = tuple([Segment(Point(*s), Point(*e)) for s,e in tpath])
+thread_geom = tuple([geometry_helpers.GSegment(Point(*s), Point(*e)) for s,e in tpath])
 g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
 		layer_class=TLayer)
 t = Threader(g)
 steps = t.route_layer(thread_geom, g.layers[45])
 #print(steps)
-
-# %%
-tpath
-# array([[[ 50.14,  74.74,  -0.  ], [ 83.34, 114.49,   9.97]],
-#        [[ 83.34, 114.49,   9.97], [147.5 , 114.49,   9.97]],
-#        [[147.5 , 114.49,   9.97], [159.14, 114.49,  16.69]],
-#        [[159.14, 114.49,  16.69], [159.05, 128.12,  61.18]]])
 
 # %%
 anchor = steps[0].state.bed.anchor
@@ -81,7 +74,26 @@ for stepnum,step in enumerate(steps):
 				style={'thread': {'line':dict(color='blue')}})
 	step.plot_gcsegments(fig)
 
-	step.state.plot_anchor(fig)
+	if hasattr(step.state, 'tseg'):
+		step.state.plot_anchor(fig)
+		tseg = step.state.tseg
+		enter = step.state.layer._isecs[tseg]['enter'][0]
+		exit  = step.state.layer._isecs[tseg]['exit'][0]
+		isec_points = step.state.layer._isecs[tseg]['isec_points']
+		isec_segs = step.state.layer._isecs[tseg]['isec_segs']
+		fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
+			marker=dict(color='yellow', symbol='x', size=8), name='enter'))
+		fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
+			marker=dict(color='orange', symbol='x', size=8), name='exit'))
+		for i,anchor in enumerate(isec_points):
+			fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers+text',
+				marker=dict(color='red', symbol='x', size=8),# name=f'isec {isec_segs[i]}',
+				hovertemplate=repr(isec_segs[i])))
+			fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(isec_segs[i], mode='lines',
+				line=dict(color='orange',  width=5))))
+			#TODO: I think the problem here could be that we're intersecting part of
+			# the thread that is not on the layer yet???
+			print(f'intersection({isec_segs[i]}, {tseg}) = {isec_points[i]}')
 
 	# if hasattr(step.state, 'hl_parts'):
 
@@ -124,3 +136,6 @@ fig.update_layout(template='plotly_dark',# autosize=False,
 )
 
 fig.show('notebook')
+
+# %%
+print(geometry_helpers.intersection.cache_info())

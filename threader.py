@@ -185,7 +185,6 @@ class TLayer(Cura4Layer):
 					isecs['isec_points'].append(inter)
 				else:
 					isecs['nsec_segs'].append(gcseg)
-
 			print(f'Intersecting took {time()-start:2.4}s')
 
 			isecs['in_layer'] = bool(isecs['isec_segs'])
@@ -330,7 +329,7 @@ class Bed:
 class State:
 	_style = {
 		'thread': {'mode':'lines', 'line': dict(color='white', width=1, dash='dot')},
-		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=2)},
+		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=4)},
 	}
 
 	def __init__(self, bed, ring, style=None):
@@ -352,7 +351,7 @@ class State:
 		"""Return a Segment representing the current thread, from the anchor point
 		to the ring."""
 		#TODO: account for bed location (y axis)
-		return Segment(self.anchor, self.ring.point)
+		return GSegment(self.anchor, self.ring.point)
 
 
 	def thread_avoid(self, avoid: List[Segment]=[], move_ring=True):
@@ -373,7 +372,7 @@ class State:
 		# use angle2point()
 		for inc in range(10, 190, 10):
 			for ang in (self.ring.angle + inc, self.ring.angle - inc):
-				thr = Segment(self.anchor, self.ring.angle2point(ang))
+				thr = GSegment(self.anchor, self.ring.angle2point(ang))
 				if not any(thr.intersection(i) for i in avoid):
 					if move_ring:
 						self.ring.set_angle(ang)
@@ -415,7 +414,8 @@ class State:
 
 	def plot_anchor(self, fig, style=None):
 		style = style_update(self.style, style)
-		fig.add_trace(go.Scatter(x=[self.anchor.x], y=[self.anchor.y], **style['anchor']))
+		fig.add_trace(go.Scatter(x=[self.anchor.x], y=[self.anchor.y],
+			name='anchor', **style['anchor']))
 
 
 
@@ -541,16 +541,13 @@ class Threader:
 
 		for thread_seg in layer.in_layer(thread):
 			anchors = layer.anchors(thread_seg)
-			print(f'Segment: {thread_seg}')
-			print(f'\tanchors: {anchors}')
-			for anchor in anchors:
-				with steps.new_step('Move thread to overlap last anchor') as s:
-					print(f'  {self.state.anchor} [green]→ anchor:[/] {anchors[0]}')
-					self.state.thread_intersect(anchor)
-					print(f'  [green]→ new anchor:[/] {self.state.anchor}')
+			self.state.layer = layer
+			self.state.tseg = thread_seg
+			with steps.new_step(f'Move thread to overlap last anchor at {anchors[0]}') as s:
+				self.state.thread_intersect(anchors[0])
 
-				with steps.new_step('Print overlapping layers segments')	as s:
-					s.add(layer.intersecting([thread_seg]))
+			with steps.new_step('Print overlapping layers segments')	as s:
+				s.add(layer.intersecting([thread_seg]))
 
 		print('[yellow]Done with thread for this layer[/];',
 				len([s for s in layer.geometry.segments if not s.printed]),

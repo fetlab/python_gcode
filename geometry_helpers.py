@@ -1,10 +1,9 @@
 import Geometry3D
-from Geometry3D import Vector, Point, Segment
+from Geometry3D import Vector, Point, Segment, intersection
 from gcline import Line
 from dataclasses import make_dataclass
-from copy import deepcopy
-from fastcore.basics import patch, store_attr
-from functools import cache
+from copy import copy
+from fastcore.basics import patch
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
@@ -48,7 +47,7 @@ def __repr__(self:Segment):
 	return "S({}, {})".format(self.start_point, self.end_point)
 @patch
 def as2d(self:Segment):
-	return Segment(self.start_point.as2d(), self.end_point.as2d())
+	return GSegment(self.start_point.as2d(), self.end_point.as2d())
 @patch
 def xyz(self:Segment):
 	return tuple(zip(self.start_point.xyz, self.end_point.xyz))
@@ -100,19 +99,20 @@ class GPoint(Point):
 
 	def as2d(self):
 		"""Return a copy of this point with *z* set to 0."""
-		c = deepcopy(self)
+		c = copy(self)
 		c.z = 0
 		return c
 
 
 
 class GSegment(Geometry3D.Segment):
-	def __init__(self, line1:Line, line2:Line, z=0):
-		self.line1 = line1
-		self.line2 = line2
+	def __init__(self, a, b, z=0):
+		if isinstance(a, Line) and isinstance(b, Line):
+			self.line1 = a
+			self.line2 = b
 
-		a = GPoint(line1, z=z)
-		b = GPoint(line2, z=z)
+			a = GPoint(self.line1, z=z)
+			b = GPoint(self.line2, z=z)
 
 		#Copied init code to avoid the deepcopy operation
 		if a == b:
@@ -123,14 +123,8 @@ class GSegment(Geometry3D.Segment):
 
 
 	#TODO: figure out disk-persistent cache to speed this up
-	@cache
 	def intersection2d(self, other):
-		return Geometry3D.intersection(self.as2d(), other.as2d())
-
-
-	@cache
-	def intersection(self, other):
-		return super().intersection(other)
+		return intersection(self.as2d(), other.as2d())
 
 
 """
