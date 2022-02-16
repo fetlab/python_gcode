@@ -44,8 +44,10 @@ def page_wide():
 
 # %%
 import threader, geometry_helpers
+from parsers import cura4
 reload(geometry_helpers)
 reload(threader)
+reload(cura4)
 from threader import TLayer, Threader
 page_wide()
 
@@ -53,11 +55,24 @@ page_wide()
 tpath = np.array(unpickle('/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle')) * 10
 thread_transform = [131.164, 110.421, 0]
 tpath += [thread_transform, thread_transform]
+
+
+#TODO: here's a problem: we need to have thread geometry from the last "true"
+# in-layer point to where the thread exits the layer.
+# We have the thread looking like:
+#  1. S(P( 50.14,  74.74, -0.00), P( 83.34, 114.49,  9.97))
+#  2. S(P( 83.34, 114.49,  9.97), P(147.50, 114.49,  9.97))
+#  3. S(P(147.50, 114.49,  9.97), P(159.14, 114.49, 16.69))
+#  4. S(P(159.14, 114.49, 16.69), P(159.05, 128.12, 61.18))
+# But segment 3, which starts inside a layer and exits it, doesn't get routed
+# properly. It should, though, because the last anchor should be "exit" for
+# segment 3, but that doesn't show up on the plot....
+
+
 thread_geom = tuple([geometry_helpers.GSegment(Point(*s), Point(*e)) for s,e in tpath])
-g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
-		layer_class=TLayer)
+g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
 t = Threader(g)
-steps = t.route_layer(thread_geom, g.layers[45])
+steps = t.route_layer(thread_geom, g.layers[49])
 #print(steps)
 
 # %%
@@ -70,30 +85,38 @@ for stepnum,step in enumerate(steps):
 
 	for i in range(0, stepnum):
 		steps[i].plot_gcsegments(fig, style={'gc_segs': {'line': dict(color='gray')}})
-		steps[i].plot_thread(fig, steps[i-1].state.anchor,
-				style={'thread': {'line':dict(color='blue')}})
+		if i > 0:
+			steps[i].plot_thread(fig, steps[i-1].state.anchor,
+					style={'thread': {'line':dict(color='blue')}})
 	step.plot_gcsegments(fig)
 
 	if hasattr(step.state, 'tseg'):
 		step.state.plot_anchor(fig)
 		tseg = step.state.tseg
-		enter = step.state.layer._isecs[tseg]['enter'][0]
-		exit  = step.state.layer._isecs[tseg]['exit'][0]
 		isec_points = step.state.layer._isecs[tseg]['isec_points']
 		isec_segs = step.state.layer._isecs[tseg]['isec_segs']
-		fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
-			marker=dict(color='yellow', symbol='x', size=8), name='enter'))
-		fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
-			marker=dict(color='orange', symbol='x', size=8), name='exit'))
-		for i,anchor in enumerate(isec_points):
-			fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers+text',
-				marker=dict(color='red', symbol='x', size=8),# name=f'isec {isec_segs[i]}',
-				hovertemplate=repr(isec_segs[i])))
-			fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(isec_segs[i], mode='lines',
-				line=dict(color='orange',  width=5))))
+
+		if step.state.layer._isecs[tseg]['enter']:
+			enter = step.state.layer._isecs[tseg]['enter'][0]
+			if enter.inside(step.state.layer.geometry.outline):
+				fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
+					marker=dict(color='yellow', symbol='x', size=8), name='enter'))
+
+		if step.state.layer._isecs[tseg]['exit']:
+			exit = step.state.layer._isecs[tseg]['exit'][0]
+			if exit.inside(step.state.layer.geometry.outline):
+				fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
+					marker=dict(color='orange', symbol='x', size=8), name='exit'))
+
+		# for i,anchor in enumerate(isec_points):
+		# 	fig.add_trace(go.Scatter(x=[anchor.x], y=[anchor.y], mode='markers+text',
+		# 		marker=dict(color='red', symbol='x', size=8),
+		# 		hovertemplate=repr(isec_segs[i])))
+			# fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(isec_segs[i], mode='lines',
+			# 	line=dict(color='orange',  width=5))))
 			#TODO: I think the problem here could be that we're intersecting part of
 			# the thread that is not on the layer yet???
-			print(f'intersection({isec_segs[i]}, {tseg}) = {isec_points[i]}')
+			# print(f'intersection({isec_segs[i]}, {tseg}) = {isec_points[i]}')
 
 	# if hasattr(step.state, 'hl_parts'):
 
@@ -119,6 +142,7 @@ for stepnum,step in enumerate(steps):
 
 # %%
 import threader, geometry_helpers, parsers.cura4
+import plotly
 reload(parsers.cura4)
 reload(geometry_helpers)
 reload(threader)
@@ -128,14 +152,76 @@ g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
 		layer_class=TLayer)
 
 fig = go.Figure()
-g.layers[1].plot(fig)
+for i in range(48,51):
+	g.layers[i].plot(fig, ['green'], ['green'], plot3d=True)
+
+for seg, color in zip(thread_geom, plotly.colors.qualitative.Set2):
+	fig.add_trace(go.Scatter3d(**geometry_helpers.segs_xyz(seg, mode='lines',
+		line=dict(color=color, dash='dot', width=4))))
 
 fig.update_layout(template='plotly_dark',# autosize=False,
 		yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
 		margin=dict(l=0, r=20, b=0, t=40, pad=0),
+		showlegend=False,
+)
+fig.update_scenes(
+		camera=dict(
+			projection={'type': 'orthographic'},
+			# eye={'x': 0, 'y': 1, 'z': 0},
+		),
 )
 
 fig.show('notebook')
 
 # %%
-print(geometry_helpers.intersection.cache_info())
+l = g.layers[49]
+l.intersect(thread_geom)
+#enter, exit = l._isecs[thread_geom[0]]['enter'][0], l._isecs[thread_geom[0]]['exit'][0]
+print(l._isecs[thread_geom[0]])
+
+fig = go.Figure()
+l.plot(fig)
+fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(thread_geom[0],
+	mode='lines', line=dict(color='green',  width=2))))
+fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], marker=dict(color='red',
+	symbol='x', size=8)))
+# fig.add_trace(go.Scatter(x=[enter.x, exit.x], y=[enter.y, exit.y],
+# 	line=dict(color='red', width=2)))
+print(thread_geom[0])
+print(enter, exit)
+fig.show('notebook')
+
+# %%
+for layer in g.layers:
+	layer.add_geometry()
+	if layer.geometry.planes.bottom.z <= thread_geom[0].end_point.z <= layer.geometry.planes.top.z:
+		print(layer)
+		print(layer.geometry.planes.bottom, layer.geometry.planes.top)
+
+# %%
+g.layers[49].anchors(thread_geom[-3])
+
+# %%
+for tseg in g.layers[49]._isecs:
+	print(tseg)
+	print(g.layers[49]._isecs[tseg]['isec_segs'])
+	print('-----')
+
+	#81.89, 115.797 -> 84.661, 113.026
+
+# %%
+"""
+For layer 49 at z = 10
+Segments:
+ 1. ( 50.14,  74.74, -0.00), ( 83.34, 114.49,  9.97)
+ 2. ( 83.34, 114.49,  9.97), (147.50, 114.49,  9.97)
+ 3. (147.50, 114.49,  9.97), (159.14, 114.49, 16.69) -> exits layer
+ 4. (159.14, 114.49, 16.69), (159.05, 128.12, 61.18)
+
+Anchor at step 2 for seg 1 is ( 83.27, 114.42)
+Anchor at step 4 for seg 2 is (143.13, 114.49)
+Anchor at step 6 for seg 3 is (154.48, 114.49)
+
+TODO next: find out what's happening with segment 3 and its exit from the
+layer; why is there at step 6?
+"""

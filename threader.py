@@ -9,6 +9,7 @@ from rich import print
 from math import atan2
 from parsers.cura4 import Cura4Layer
 from time import time
+from itertools import cycle
 
 """TODO:
 	* [X] layer.intersect(thread)
@@ -51,15 +52,18 @@ class TLayer(Cura4Layer):
 
 	def plot(self, fig,
 			move_colors=plotly.colors.qualitative.Set2,
-			extrude_colors=plotly.colors.qualitative.Dark2):
+			extrude_colors=plotly.colors.qualitative.Dark2,
+			plot3d=False, only_outline=True):
 		self.add_geometry()
-		colors = zip(extrude_colors, move_colors)
+		colors = cycle(zip(extrude_colors, move_colors))
 
-		for name, part in self.parts.items():
+		for gcline, part in self.parts.items():
+			if only_outline and 'wall-outer' not in gcline.line.lower():
+				continue
 			colorD, colorL = next(colors)
 
-			Esegs = {'x': [], 'y': []}
-			Msegs = {'x': [], 'y': []}
+			Esegs = {'x': [], 'y': [], 'z': []}
+			Msegs = {'x': [], 'y': [], 'z': []}
 			for line in part:
 				try:
 					seg = line.segment
@@ -70,13 +74,26 @@ class TLayer(Cura4Layer):
 				segs = Esegs if line.is_xyextrude() else Msegs
 				segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
 				segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
+				segs['z'].extend([seg.start_point.z, seg.end_point.z, None])
+
+			if plot3d:
+				scatter = go.Scatter3d
+				lineprops = {'width': 2}
+				plotprops = {'opacity': 1}
+			else:
+				scatter = go.Scatter
+				lineprops = {}
+				plotprops = {'opacity': .5}
+				if 'z' in Esegs: Esegs.pop('z')
+				if 'z' in Msegs: Msegs.pop('z')
+
 
 			if Esegs['x']:
-				fig.add_trace(go.Scatter(**Esegs, mode='lines', name=repr(name).lower(),
-					line=dict(color=colorD), opacity=.5))
+				fig.add_trace(scatter(**Esegs, mode='lines', name=repr(gcline).lower(),
+					line=dict(color=colorD, **lineprops), **plotprops))
 			if Msegs['x']:
-				fig.add_trace(go.Scatter(**Msegs, mode='lines', name=repr(name).lower(),
-					line=dict(color=colorL, dash='dot'), opacity=.5))
+				fig.add_trace(scatter(**Msegs, mode='lines', name=repr(gcline).lower(),
+					line=dict(color=colorL, dash='dot', **lineprops), **plotprops))
 
 
 	def add_geometry(self):
@@ -84,10 +101,7 @@ class TLayer(Cura4Layer):
 		GSegment."""
 		if self.geometry or not self.has_moves:
 			return
-		self.geometry = Geometry(segments=[], planes=None, outline=None)
-		#TODO: add outline of layer using the layer.part with the largest extents;
-		# need to be able to test intersections, but it's likely a concave polygone
-		# with holes so complicated.
+		self.geometry = Geometry(segments=[], planes=None, outline=[])
 
 		last = None
 		for line in self.lines:
@@ -116,6 +130,11 @@ class TLayer(Cura4Layer):
 		top.z    = top_z
 		self.geometry.planes = Planes(bottom=bottom, top=top)
 
+		wall = [part for part in self.parts if part.comment and 'type:wall-outer' in part.comment.lower()][0]
+		for line in self.parts[wall]:
+			if line.is_xyextrude():
+				self.geometry.outline.append(line.segment)
+
 
 	def in_layer(self, thread: List[Segment]) -> List[Segment]:
 		"""Return a list of the thread segments which are inside this layer. Note
@@ -124,11 +143,21 @@ class TLayer(Cura4Layer):
 		self.intersect(thread)
 		return [tseg for tseg in thread if self._isecs[tseg]['in_layer']]
 
+
 	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
 		"""Return a list of GSegments which the given thread segments do not
 		intersect."""
 		self.intersect(thread)
-		return sum([self._isecs[tseg]['nsec_segs'] for tseg in thread], [])
+		#First find all *intersecting* GSegments
+		intersecting = set.union(*[set(self._isecs[tseg]['isec_segs']) for tseg in thread])
+
+		#And all non-intersecting GSegments
+		non_intersecting = set.union(*[set(self._isecs[tseg]['nsec_segs']) for tseg in thread])
+
+		#And return the difference
+		return non_intersecting - intersecting
+
+		#return sum([self._isecs[tseg]['nsec_segs'] for tseg in thread], [])
 
 
 	def intersecting(self, thread: List[Segment]) -> List[GSegment]:
@@ -143,7 +172,19 @@ class TLayer(Cura4Layer):
 		end point of the thread segment (with the assumption that this the
 		"true" anchor point, as the last location the thread will be stuck down."""
 		self.intersect([tseg])
-		anchors = sum([self._isecs[tseg][k] for k in ('enter', 'isec_points', 'exit')], [])
+
+		anchors = self._isecs[tseg]['isec_points']
+		entry   = self._isecs[tseg]['enter']
+		exit    = self._isecs[tseg]['exit']
+		print(f'anchors with thread segment: {tseg}')
+		print(f'isec anchors: {anchors}')
+		if entry and entry[0].inside(self.geometry.outline):
+			anchors.append(entry[0])
+			print(f'Entry anchor: {entry[0]}')
+		if exit  and exit[0]. inside(self.geometry.outline):
+			anchors.append(exit [0])
+			print(f'Exit anchor: {exit[0]}')
+
 		return sorted(anchors, key=lambda p:distance(tseg.end_point.as2d(), p.as2d()))
 
 
@@ -169,11 +210,13 @@ class TLayer(Cura4Layer):
 			#Is the thread segment entirely below or above the layer? If so, skip it.
 			if((tseg.start_point.z <  bot.z and tseg.end_point.z <  bot.z) or
 				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
+				print(f'Thread segment {tseg} endpoints not in layer')
 				continue
 
-			#See if the thread segment enters and/or exits the layer
-			isecs['enter'] = [tseg.intersection(bot)]
-			isecs['exit']  = [tseg.intersection(top)]
+			enter = tseg.intersection(bot)
+			exit  = tseg.intersection(top)
+			isecs['enter'] = [enter] if enter else []
+			isecs['exit']  = [exit]  if exit  else []
 
 			start = time()
 			#And find the gCode lines the thread segment intersects with
@@ -187,7 +230,12 @@ class TLayer(Cura4Layer):
 					isecs['nsec_segs'].append(gcseg)
 			print(f'Intersecting took {time()-start:2.4}s')
 
-			isecs['in_layer'] = bool(isecs['isec_segs'])
+			isecs['in_layer'] = any([
+				(enter and enter.inside(self.geometry.outline)),
+				(exit  and exit .inside(self.geometry.outline)),
+				tseg.start_point.inside(self.geometry.outline),
+				tseg.end_point  .inside(self.geometry.outline)] +
+				isecs['isec_segs'])
 
 
 class Ring:
@@ -401,6 +449,7 @@ class State:
 			self.ring.set_angle(ring_angle)
 
 		if set_new_anchor:
+			print(f'new anchor: {target}')
 			self.anchor = target
 
 		return ring_angle
@@ -415,7 +464,7 @@ class State:
 	def plot_anchor(self, fig, style=None):
 		style = style_update(self.style, style)
 		fig.add_trace(go.Scatter(x=[self.anchor.x], y=[self.anchor.y],
-			name='anchor', **style['anchor']))
+			name='state anchor', **style['anchor']))
 
 
 
@@ -470,12 +519,15 @@ class Step:
 
 	def plot_thread(self, fig, start:Point, style=None):
 		#Plot a thread segment, starting at 'start'
+		if start == self.state.anchor:
+			return
 		style = style_update(self.style, style)
 		fig.add_trace(go.Scatter(
 			x=[start.x, self.state.anchor.x],
 			y=[start.y, self.state.anchor.y],
 			**style['thread'],
 		))
+		# print(f'thread ({style["thread"]["line"]["color"]}): {start} -> {self.state.anchor}')
 
 
 
@@ -527,6 +579,7 @@ class Threader:
 
 		if not layer.in_layer(thread):
 			print('Thread not in layer at all')
+			return
 		else:
 			with steps.new_step('Move thread out of the way') as s:
 				#rotate ring to avoid segments it shouldn't intersect
@@ -539,11 +592,12 @@ class Threader:
 		with steps.new_step('Print non-intersecting layer segments') as s:
 			s.add(layer.non_intersecting(thread))
 
+		print(f'{len(layer.in_layer(thread))} thread segments in this layer:\n\t{layer.in_layer(thread)}')
 		for thread_seg in layer.in_layer(thread):
 			anchors = layer.anchors(thread_seg)
 			self.state.layer = layer
 			self.state.tseg = thread_seg
-			with steps.new_step(f'Move thread to overlap last anchor at {anchors[0]}') as s:
+			with steps.new_step(f'Move thread ({thread_seg}) to overlap anchor at {anchors[0]}') as s:
 				self.state.thread_intersect(anchors[0])
 
 			with steps.new_step('Print overlapping layers segments')	as s:

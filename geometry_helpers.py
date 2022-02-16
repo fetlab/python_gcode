@@ -1,6 +1,6 @@
 import Geometry3D
 from Geometry3D import Vector, Point, Segment, intersection
-from gcline import Line
+from gcline import Line as GCLine
 from dataclasses import make_dataclass
 from copy import copy
 from fastcore.basics import patch
@@ -86,45 +86,78 @@ class GPoint(Point):
 	def __init__(self, *args, z=0):
 		"""Pass Geometry3D.Point arguments or a gcline.Line and optionally a *z*
 		argument. If *z* is missing it will be set to 0."""
-		if len(args) == 1 and isinstance(args[0], Line):
+		if len(args) == 1 and isinstance(args[0], GCLine):
 			l = args[0]
 			if not (l.code in ('G0', 'G1') and 'X' in l.args and 'Y' in l.args):
-				raise ValueError(f"Line instance isn't an X or Y move:\n\t{args[0]}")
+				raise ValueError(f"GCLine instance isn't an X or Y move:\n\t{args[0]}")
 			super().__init__(l.args['X'], l.args['Y'], z)
 			self.line = l
+		elif len(args) == 3:
+			super().__init__(*args)
+			self.line = None
 		else:
 			super().__init__(*args, z)
 			self.line = None
 
 
 	def as2d(self):
-		"""Return a copy of this point with *z* set to 0."""
+		"""Return a copy of this point with *z* set to 0. If z is already 0, return self."""
+		if self.z == 0:
+			return self
 		c = copy(self)
 		c.z = 0
 		return c
 
 
+	def inside(self, seglist):
+		"""Return True if this point is inside the polygon formed by the Segments
+		in seglist."""
+		#We make a segment from this point to 0,0,0 and test intersections; if
+		# there are an even number, the point is inside the polygon.
+		test_seg = GSegment(self.as2d(), (0,0,0))
+		return len([s for s in seglist if intersection(test_seg, s.as_2d())]) % 2
+
+#Patch Point to also have a inside() method
+Point.inside = GPoint.inside
+
 
 class GSegment(Geometry3D.Segment):
 	def __init__(self, a, b, z=0):
-		if isinstance(a, Line) and isinstance(b, Line):
-			self.line1 = a
-			self.line2 = b
+		#Save lines of gcode that make this segment, if any
+		self.gc_line1 = None
+		self.gc_line2 = None
 
-			a = GPoint(self.line1, z=z)
-			b = GPoint(self.line2, z=z)
+		if isinstance(a, Point):
+			point1 = a
+		elif isinstance(a, GCLine):
+			self.gc_line1 = a
+			point1 = GPoint(self.gc_line1, z=z)
+		elif isinstance(a, (tuple,list)):
+			point1 = GPoint(*a)
+		if isinstance(b, Point):
+			point2 = b
+		elif isinstance(b, GCLine):
+			self.gc_line2 = b
+			point2 = GPoint(self.gc_line2, z=z)
+		elif isinstance(b, (tuple,list)):
+			point2 = GPoint(*b)
 
-		#Copied init code to avoid the deepcopy operation
-		if a == b:
+		if point1 == point2:
 			raise ValueError("Cannot initialize a Segment with two identical Points")
-		self.line = Geometry3D.Line(a,b)
-		self.start_point = a
-		self.end_point = b
+
+		self.line = Geometry3D.Line(point1, point2)
+		self.start_point = point1
+		self.end_point = point2
 
 
-	#TODO: figure out disk-persistent cache to speed this up
 	def intersection2d(self, other):
 		return intersection(self.as2d(), other.as2d())
+
+
+	def as_2d(self):
+		if self.start_point.z == 0 and self.end_point.z == 0:
+			return self
+		return GSegment(self.start_point.as2d(), self.end_point.as2d())
 
 
 """

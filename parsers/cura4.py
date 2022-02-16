@@ -1,3 +1,4 @@
+import re
 from gcline import Line
 from gclayer import Layer
 from util import listsplit
@@ -82,6 +83,14 @@ def parse(lines, layer_class=Layer, line_class=Line):
 	#Manually set number of layer 0 because the ';LAYER' comment is now attached
 	# to the preamble
 	layergroups[0].layernum = 0
+
+	#Add layer height to each layer if we can find the layer height from the preamble comment
+	m = next(filter(None, [re.search('Layer height:\s+(\d+\.\d+)', l.line, re.I)
+		for l in preamble]))
+	if m:
+		layer_height = float(m.group(1))
+		for layer in layergroups:
+			layer.layer_height = layer_height
 
 	#Find the layer number in each group of lines
 	for i,layer in enumerate(layergroups[1:]):
