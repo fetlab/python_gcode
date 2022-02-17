@@ -3,7 +3,7 @@ from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance
 from math import radians, sin, cos, degrees
 from typing import List
-from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy
+from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine
 from fastcore.basics import basic_repr, store_attr
 from rich import print
 from math import atan2
@@ -47,7 +47,8 @@ class TLayer(Cura4Layer):
 		super().__init__(*args, **kwargs)
 		self.geometry = None
 		self.layer_height = layer_height
-		self._isecs = {}
+		self.model_isecs = {}
+		self.in_out = []
 
 
 	def plot(self, fig,
@@ -136,34 +137,60 @@ class TLayer(Cura4Layer):
 				self.geometry.outline.append(line.segment)
 
 
-	def in_layer(self, thread: List[Segment]) -> List[Segment]:
-		"""Return a list of the thread segments which are inside this layer. Note
-		that it's not guaranteed that they actually interact with the geometry, but
-		that the ends of the segment are not both above or below the layer."""
-		self.intersect(thread)
-		return [tseg for tseg in thread if self._isecs[tseg]['in_layer']]
+	def flatten_thread(self, thread: List[Segment]) -> List[GSegment]:
+		"""Return the input thread "flattened" to have the same z-height as the
+		layer, clipped to the top/bottom layer planes, and with resulting segments
+		that are on the same line combined."""
+		self.add_geometry()
+
+		top = self.geometry.planes.top
+		bot = self.geometry.planes.bottom
+		segs = []
+
+		for i,tseg in enumerate(thread):
+			#Is the thread segment entirely below or above the layer? If so, skip it.
+			if((tseg.start_point.z <  bot.z and tseg.end_point.z <  bot.z) or
+				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
+				print(f'Thread segment {tseg} endpoints not in layer')
+				continue
+
+			#Clip segments to top/bottom of layer (note "walrus" operator := )
+			if s := tseg.intersection(bot): self.in_out.append(s)
+			if e := tseg.intersection(top): self.in_out.append(e)
+			segs.append(GSegment(s or tseg.start_point, e or tseg.end_point))
+			if s or e:
+				print(f'Crop {tseg} to\n'
+						  f'     {segs[-1]}')
+
+			#Flatten segment to the layer's z-height
+			segs[-1].set_z(self.z)
+
+		#Combine collinear segments
+		segs = seg_combine(segs)
+
+		#Cache intersections
+		for seg in segs:
+			self.intersect_model(seg)
+
+		return segs
 
 
 	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
 		"""Return a list of GSegments which the given thread segments do not
 		intersect."""
-		self.intersect(thread)
 		#First find all *intersecting* GSegments
-		intersecting = set.union(*[set(self._isecs[tseg]['isec_segs']) for tseg in thread])
+		intersecting = set.union(*[set(self.model_isecs[tseg]['isec_segs']) for tseg in thread])
 
 		#And all non-intersecting GSegments
-		non_intersecting = set.union(*[set(self._isecs[tseg]['nsec_segs']) for tseg in thread])
+		non_intersecting = set.union(*[set(self.model_isecs[tseg]['nsec_segs']) for tseg in thread])
 
 		#And return the difference
 		return non_intersecting - intersecting
 
-		#return sum([self._isecs[tseg]['nsec_segs'] for tseg in thread], [])
 
-
-	def intersecting(self, thread: List[Segment]) -> List[GSegment]:
-		"""Return a list of GSegments which the given thread segments intersect."""
-		self.intersect(thread)
-		return sum([self._isecs[tseg]['isec_segs'] for tseg in thread], [])
+	def intersecting(self, tseg: GSegment) -> List[GSegment]:
+		"""Return a list of GSegments which the given thread segment intersects."""
+		return self.model_isecs[tseg]['isec_segs']
 
 
 	def anchors(self, tseg: Segment) -> List[Point]:
@@ -171,21 +198,51 @@ class TLayer(Cura4Layer):
 		segment intersects the layer geometry, ordered by distance to the
 		end point of the thread segment (with the assumption that this the
 		"true" anchor point, as the last location the thread will be stuck down."""
-		self.intersect([tseg])
-
-		anchors = self._isecs[tseg]['isec_points']
-		entry   = self._isecs[tseg]['enter']
-		exit    = self._isecs[tseg]['exit']
+		anchors = self.model_isecs[tseg]['isec_points']
+		entry   = tseg.start_point
+		exit    = tseg.end_point
 		print(f'anchors with thread segment: {tseg}')
 		print(f'isec anchors: {anchors}')
-		if entry and entry[0].inside(self.geometry.outline):
-			anchors.append(entry[0])
-			print(f'Entry anchor: {entry[0]}')
-		if exit  and exit[0]. inside(self.geometry.outline):
-			anchors.append(exit [0])
-			print(f'Exit anchor: {exit[0]}')
+		if entry in self.in_out and entry.inside(self.geometry.outline):
+			anchors.append(entry)
+			print(f'Entry anchor: {entry}')
+		if exit in self.in_out and exit.inside(self.geometry.outline):
+			anchors.append(exit)
+			print(f'Exit anchor: {exit}')
 
-		return sorted(anchors, key=lambda p:distance(tseg.end_point.as2d(), p.as2d()))
+		return sorted(anchors, key=lambda p:distance(tseg.end_point, p))
+
+
+	def intersect_model(self, tseg: GSegment):
+		"""Given a thread segment, return all of the intersections with the model's
+		printed lines of gcode. Returns
+			nsec_segs, isec_segs, isec_points
+		where
+			nsec_segs is non-intersecting GCLines
+			isec_segs is intersecting GCLines
+			isec_points is a list of GPoints for the intersections
+		"""
+		self.add_geometry()
+
+		#Caching
+		if tseg in self.model_isecs:
+			return self.model_isecs[tseg]
+
+		isecs = {
+			'nsec_segs': [],                      # Non-intersecting gcode segments
+			'isec_segs': [],   'isec_points': [], # Intersecting gcode segments and locations
+		}
+
+		for gcseg in self.geometry.segments:
+			gcseg.printed = False
+			inter = gcseg.intersection(tseg)
+			if inter:
+				isecs['isec_segs'  ].append(gcseg)
+				isecs['isec_points'].append(inter)
+			else:
+				isecs['nsec_segs'].append(gcseg)
+
+		self.model_isecs[tseg] = isecs
 
 
 	def intersect(self, thread: List[Segment]):
@@ -201,22 +258,16 @@ class TLayer(Cura4Layer):
 			if tseg in self._isecs:
 				continue
 			self._isecs[tseg] = isecs = {
-					'in_layer': False,                  # Is the thread in this layer at all?
-					'nsec_segs': [],                    # Non-intersecting gcode segments
-					'isec_segs': [], 'isec_points': [], # Intersecting gcode segments and locations
-					'enter':     [],  'exit': [],       # Thread segment entry and/or exit locations
+					'in_layer': False,                    # Is the thread in this layer at all?
+					'nsec_segs': [],                      # Non-intersecting gcode segments
+					'isec_segs': [],   'isec_points': [], # Intersecting gcode segments and locations
+					'enter':     None, 'exit': None,      # Thread segment entry and/or exit locations
 			}
-
-			#Is the thread segment entirely below or above the layer? If so, skip it.
-			if((tseg.start_point.z <  bot.z and tseg.end_point.z <  bot.z) or
-				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
-				print(f'Thread segment {tseg} endpoints not in layer')
-				continue
 
 			enter = tseg.intersection(bot)
 			exit  = tseg.intersection(top)
-			isecs['enter'] = [enter] if enter else []
-			isecs['exit']  = [exit]  if exit  else []
+			isecs['enter'] = enter
+			isecs['exit']  = exit
 
 			start = time()
 			#And find the gCode lines the thread segment intersects with
@@ -568,16 +619,20 @@ class Threader:
 		return self.layer_steps
 
 
-	def route_layer(self, thread, layer):
+	def route_layer(self, thread_list, layer):
 		"""Goal: produce a sequence of "steps" that route the thread through one
 		layer. A "step" is a set of operations that diverge from the original
 		gcode; for example, printing all of the non-thread-intersecting segments
 		would be one "step".
 		"""
-		print(f'Route {len(thread)}-segment thread through layer:\n  {layer}')
+		print(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
 		steps = Steps(layer=layer, state=self.state)
 
-		if not layer.in_layer(thread):
+		#Get the thread segments to work on
+		thread = layer.flatten_thread(thread_list)
+		steps.flat_thread = thread
+
+		if not thread:
 			print('Thread not in layer at all')
 			return
 		else:
@@ -592,8 +647,8 @@ class Threader:
 		with steps.new_step('Print non-intersecting layer segments') as s:
 			s.add(layer.non_intersecting(thread))
 
-		print(f'{len(layer.in_layer(thread))} thread segments in this layer:\n\t{layer.in_layer(thread)}')
-		for thread_seg in layer.in_layer(thread):
+		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
+		for thread_seg in thread:
 			anchors = layer.anchors(thread_seg)
 			self.state.layer = layer
 			self.state.tseg = thread_seg
@@ -601,13 +656,13 @@ class Threader:
 				self.state.thread_intersect(anchors[0])
 
 			with steps.new_step('Print overlapping layers segments')	as s:
-				s.add(layer.intersecting([thread_seg]))
+				s.add(layer.intersecting(thread_seg))
 
 		print('[yellow]Done with thread for this layer[/];',
 				len([s for s in layer.geometry.segments if not s.printed]),
 				'gcode lines left')
 
-		return steps.steps
+		return steps
 
 
 """

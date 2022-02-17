@@ -56,24 +56,16 @@ tpath = np.array(unpickle('/Users/dan/r/thread_printer/stl/test1/thread_from_fus
 thread_transform = [131.164, 110.421, 0]
 tpath += [thread_transform, thread_transform]
 
-
-#TODO: here's a problem: we need to have thread geometry from the last "true"
-# in-layer point to where the thread exits the layer.
-# We have the thread looking like:
-#  1. S(P( 50.14,  74.74, -0.00), P( 83.34, 114.49,  9.97))
-#  2. S(P( 83.34, 114.49,  9.97), P(147.50, 114.49,  9.97))
-#  3. S(P(147.50, 114.49,  9.97), P(159.14, 114.49, 16.69))
-#  4. S(P(159.14, 114.49, 16.69), P(159.05, 128.12, 61.18))
-# But segment 3, which starts inside a layer and exits it, doesn't get routed
-# properly. It should, though, because the last anchor should be "exit" for
-# segment 3, but that doesn't show up on the plot....
-
-
 thread_geom = tuple([geometry_helpers.GSegment(Point(*s), Point(*e)) for s,e in tpath])
 g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
 t = Threader(g)
-steps = t.route_layer(thread_geom, g.layers[49])
+stepsobj = t.route_layer(thread_geom, g.layers[49])
+steps = stepsobj.steps
 #print(steps)
+
+# %%
+stepsobj.flat_thread
+pickle(stepsobj.flat_thread, '/tmp/t.pickle')
 
 # %%
 anchor = steps[0].state.bed.anchor
@@ -93,17 +85,15 @@ for stepnum,step in enumerate(steps):
 	if hasattr(step.state, 'tseg'):
 		step.state.plot_anchor(fig)
 		tseg = step.state.tseg
-		isec_points = step.state.layer._isecs[tseg]['isec_points']
-		isec_segs = step.state.layer._isecs[tseg]['isec_segs']
+		isec_points = step.state.layer.model_isecs[tseg]['isec_points']
+		isec_segs = step.state.layer.model_isecs[tseg]['isec_segs']
 
-		if step.state.layer._isecs[tseg]['enter']:
-			enter = step.state.layer._isecs[tseg]['enter'][0]
+		if enter := getattr(tseg.start_point, 'in_out', None):
 			if enter.inside(step.state.layer.geometry.outline):
 				fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
 					marker=dict(color='yellow', symbol='x', size=8), name='enter'))
 
-		if step.state.layer._isecs[tseg]['exit']:
-			exit = step.state.layer._isecs[tseg]['exit'][0]
+		if exit := getattr(tseg.end_point, 'in_out', None):
 			if exit.inside(step.state.layer.geometry.outline):
 				fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
 					marker=dict(color='orange', symbol='x', size=8), name='exit'))
@@ -176,7 +166,7 @@ fig.show('notebook')
 # %%
 l = g.layers[49]
 l.intersect(thread_geom)
-#enter, exit = l._isecs[thread_geom[0]]['enter'][0], l._isecs[thread_geom[0]]['exit'][0]
+#enter, exit = l._isecs[thread_geom[0]]['enter'], l._isecs[thread_geom[0]]['exit']
 print(l._isecs[thread_geom[0]])
 
 fig = go.Figure()
@@ -213,15 +203,15 @@ for tseg in g.layers[49]._isecs:
 """
 For layer 49 at z = 10
 Segments:
- 1. ( 50.14,  74.74, -0.00), ( 83.34, 114.49,  9.97)
- 2. ( 83.34, 114.49,  9.97), (147.50, 114.49,  9.97)
- 3. (147.50, 114.49,  9.97), (159.14, 114.49, 16.69) -> exits layer
- 4. (159.14, 114.49, 16.69), (159.05, 128.12, 61.18)
+ 0. ( 50.14,  74.74, -0.00), ( 83.34, 114.49,  9.97)
+ 1. ( 83.34, 114.49,  9.97), (147.50, 114.49,  9.97)
+ 2. (147.50, 114.49,  9.97), (159.14, 114.49, 16.69) -> exits layer
+ 3. (159.14, 114.49, 16.69), (159.05, 128.12, 61.18)
 
-Anchor at step 2 for seg 1 is ( 83.27, 114.42)
-Anchor at step 4 for seg 2 is (143.13, 114.49)
-Anchor at step 6 for seg 3 is (154.48, 114.49)
+Anchor at step 2 for seg 0 is ( 83.27, 114.42)
+Anchor at step 4 for seg 1 is (143.13, 114.49)
+Anchor at step 6 for seg 2 is (154.48, 114.49)
 
-TODO next: find out what's happening with segment 3 and its exit from the
-layer; why is there at step 6?
+TODO next: find out what's happening with segment 2 and its exit from the
+layer; why is there a step 6?
 """

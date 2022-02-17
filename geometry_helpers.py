@@ -4,6 +4,7 @@ from gcline import Line as GCLine
 from dataclasses import make_dataclass
 from copy import copy
 from fastcore.basics import patch
+from rich import print
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
@@ -26,10 +27,32 @@ def segs_xy(*segs, **kwargs):
 	return d
 
 
+#Combine subsequent segments on the same line
+def seg_combine(segs):
+	if not segs: return []
+	r = [segs[0]]
+	for seg in segs[1:]:
+		if seg.line == r[-1].line:
+			print(f'Combine {r[-1]}, {seg}', end='')
+			if seg.end_point == r[-1].start_point:
+				r[-1] = GSegment(seg.start_point, r[-1].end_point)
+			elif r[-1].end_point == seg.start_point:
+				r[-1] = GSegment(r[-1].start_point, seg.end_point)
+			else:
+				s1 = GSegment(  seg.start_point, r[-1].end_point)
+				s2 = GSegment(r[-1].start_point,   seg.end_point)
+				r[-1] = max(s1, s2, key=lambda s: s.length())
+			print(f' -> {r[-1]}')
+		else:
+			print(f"Don't combine {r[-1]}, {seg}")
+			r.append(seg)
+	return r
+
+
 #Monkey-patch Point
 @patch
 def __repr__(self:Point):
-	return "P({:.2f}, {:.2f}, {:.2f})".format(self.x, self.y, self.z)
+	return "{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
 @patch
 def as2d(self:Point):
 	return Point(self.x, self.y, 0)
@@ -44,7 +67,7 @@ def xy(self:Point):
 #Monkey-patch Segment
 @patch
 def __repr__(self:Segment):
-	return "S({}, {})".format(self.start_point, self.end_point)
+	return "<{}↔︎{}>".format(self.start_point, self.end_point)
 @patch
 def as2d(self:Segment):
 	return GSegment(self.start_point.as2d(), self.end_point.as2d())
@@ -158,6 +181,15 @@ class GSegment(Geometry3D.Segment):
 		if self.start_point.z == 0 and self.end_point.z == 0:
 			return self
 		return GSegment(self.start_point.as2d(), self.end_point.as2d())
+
+
+	def set_z(self, z):
+		"""Set both endpoints of this Segment to a new z."""
+		if self.start_point.z == z and self.end_point.z == z:
+			return
+		self.start_point.z = z
+		self.end_point.z = z
+		self.line = Geometry3D.Line(self.start_point, self.end_point)
 
 
 """
