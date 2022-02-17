@@ -59,76 +59,18 @@ tpath += [thread_transform, thread_transform]
 thread_geom = tuple([geometry_helpers.GSegment(Point(*s), Point(*e)) for s,e in tpath])
 g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
 t = Threader(g)
-stepsobj = t.route_layer(thread_geom, g.layers[49])
-steps = stepsobj.steps
-#print(steps)
 
 # %%
-stepsobj.flat_thread
-pickle(stepsobj.flat_thread, '/tmp/t.pickle')
+stepsobj49 = t.route_layer(thread_geom, g.layers[49])
+stepsobj49.plot()
 
 # %%
-anchor = steps[0].state.bed.anchor
-for stepnum,step in enumerate(steps):
-	print(f'Step {stepnum}: {step.name}')
-	fig = go.Figure()
+#TODO NEXT: avoid thread in this layer when printing, and move thread so we can
+# print the avoided areas
+stepsobj50 = t.route_layer(thread_geom, g.layers[50])
 
-	step.state.bed.plot(fig)
-
-	for i in range(0, stepnum):
-		steps[i].plot_gcsegments(fig, style={'gc_segs': {'line': dict(color='gray')}})
-		if i > 0:
-			steps[i].plot_thread(fig, steps[i-1].state.anchor,
-					style={'thread': {'line':dict(color='blue')}})
-	step.plot_gcsegments(fig)
-
-	if hasattr(step.state, 'tseg'):
-		step.state.plot_anchor(fig)
-		tseg = step.state.tseg
-		isec_points = step.state.layer.model_isecs[tseg]['isec_points']
-		isec_segs = step.state.layer.model_isecs[tseg]['isec_segs']
-
-		if enter := getattr(tseg.start_point, 'in_out', None):
-			if enter.inside(step.state.layer.geometry.outline):
-				fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
-					marker=dict(color='yellow', symbol='x', size=8), name='enter'))
-
-		if exit := getattr(tseg.end_point, 'in_out', None):
-			if exit.inside(step.state.layer.geometry.outline):
-				fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
-					marker=dict(color='orange', symbol='x', size=8), name='exit'))
-
-		# for i,anchor in enumerate(isec_points):
-		# 	fig.add_trace(go.Scatter(x=[anchor.x], y=[anchor.y], mode='markers+text',
-		# 		marker=dict(color='red', symbol='x', size=8),
-		# 		hovertemplate=repr(isec_segs[i])))
-			# fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(isec_segs[i], mode='lines',
-			# 	line=dict(color='orange',  width=5))))
-			#TODO: I think the problem here could be that we're intersecting part of
-			# the thread that is not on the layer yet???
-			# print(f'intersection({isec_segs[i]}, {tseg}) = {isec_points[i]}')
-
-	# if hasattr(step.state, 'hl_parts'):
-
-	# 	a, b = step.state.hl_parts
-	# 	fig.add_trace(go.Scatter(x=[a.x, b.x], y=[a.y, b.y], line=dict(color='red',
-	# 		width=4, dash='dot')))
-	# 	fig.add_trace(go.Scatter(x=[step.state.ring_point.x],
-	# 		y=[step.state.ring_point.y], mode='markers',
-	# 		marker=dict(color='limegreen', symbol='circle', size=8)))
-
-	step.state.plot_thread_to_ring(fig)
-	step.plot_thread(fig, anchor)
-	anchor = step.state.anchor
-
-	step.state.ring.plot(fig)
-
-	fig.update_layout(template='plotly_dark',# autosize=False,
-			yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
-			#height=750,
-			margin=dict(l=0, r=20, b=0, t=0, pad=0),
-			showlegend=False,)
-	fig.show('notebook')
+# %%
+stepsobj50.plot()
 
 # %%
 import threader, geometry_helpers, parsers.cura4

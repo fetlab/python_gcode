@@ -73,10 +73,12 @@ def as2d(self:Segment):
 	return GSegment(self.start_point.as2d(), self.end_point.as2d())
 @patch
 def xyz(self:Segment):
-	return tuple(zip(self.start_point.xyz, self.end_point.xyz))
+	x, y, z = tuple(zip(self.start_point.xyz(), self.end_point.xyz()))
+	return dict(x=x, y=y, z=z)
 @patch
 def xy(self:Segment):
-	return tuple(zip(self.start_point.xy, self.end_point.xy))
+	x, y = tuple(zip(self.start_point.xy(), self.end_point.xy()))
+	return dict(x=x, y=y)
 
 
 

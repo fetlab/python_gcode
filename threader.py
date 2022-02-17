@@ -31,7 +31,10 @@ def style_update(old_style, new_style):
 	style = deepcopy(old_style)
 	if new_style is not None:
 		for item in new_style:
-			style[item].update(new_style[item])
+			if item in style:
+				style[item].update(new_style[item])
+			else:
+				style[item] = new_style[item]
 	return style
 
 
@@ -131,10 +134,10 @@ class TLayer(Cura4Layer):
 		top.z    = top_z
 		self.geometry.planes = Planes(bottom=bottom, top=top)
 
-		wall = [part for part in self.parts if part.comment and 'type:wall-outer' in part.comment.lower()][0]
-		for line in self.parts[wall]:
-			if line.is_xyextrude():
-				self.geometry.outline.append(line.segment)
+		for part, lines in self.parts.items():
+			if 'type:wall-outer' in (lines[0].comment or '').lower():
+				self.geometry.outline.extend(
+						[line.segment for line in lines if line.is_xyextrude()])
 
 
 	def flatten_thread(self, thread: List[Segment]) -> List[GSegment]:
@@ -201,6 +204,7 @@ class TLayer(Cura4Layer):
 		anchors = self.model_isecs[tseg]['isec_points']
 		entry   = tseg.start_point
 		exit    = tseg.end_point
+		#TODO: why isn't there an entry/exit anchor for layer 50?
 		print(f'anchors with thread segment: {tseg}')
 		print(f'isec anchors: {anchors}')
 		if entry in self.in_out and entry.inside(self.geometry.outline):
@@ -582,12 +586,15 @@ class Step:
 
 
 
-#TODO: Change new_step() to return Steps class with _current_step set to the
-# new Step object. Then raise something like NoChangesException in different
-# steps so that we don't add an empty Step to steps[].
 class Steps:
-	def __init__(self, layer, state):
-		store_attr()
+	#Default plotting style
+	_style = {
+		'old_segs':   {'mode': 'lines', 'line': dict(color='gray')},
+		'old_thread': {'mode': 'lines', 'line': dict(color='blue')},
+	}
+	def __init__(self, layer, state, style=None):
+		store_attr(but='style')
+		self.style = style_update(self._style, style)
 		self.steps = []
 		self._current_step = None
 
@@ -604,6 +611,51 @@ class Steps:
 	def new_step(self, name=''):
 		self.steps.append(Step(self.state, name))
 		return self.current
+
+
+	def plot(self, style=None):
+		style = style_update(self.style, style)
+		steps = self.steps
+		anchor = steps[0].state.anchor
+
+		for stepnum,step in enumerate(steps):
+			print(f'Step {stepnum}: {step.name}')
+			fig = go.Figure()
+
+			step.state.bed.plot(fig)
+
+			for i in range(0, stepnum):
+				steps[i].plot_gcsegments(fig, style=style['old_segs'])
+				if i > 0:
+					steps[i].plot_thread(fig, steps[i-1].state.anchor,
+							style=style['old_thread'])
+			step.plot_gcsegments(fig)
+
+			if hasattr(step.state, 'tseg'):
+				step.state.plot_anchor(fig)
+				tseg = step.state.tseg
+
+				if enter := getattr(tseg.start_point, 'in_out', None):
+					if enter.inside(step.state.layer.geometry.outline):
+						fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
+							marker=dict(color='yellow', symbol='x', size=8), name='enter'))
+
+				if exit := getattr(tseg.end_point, 'in_out', None):
+					if exit.inside(step.state.layer.geometry.outline):
+						fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
+							marker=dict(color='orange', symbol='x', size=8), name='exit'))
+
+			step.state.plot_thread_to_ring(fig)
+			step.plot_thread(fig, anchor)
+			anchor = step.state.anchor
+
+			step.state.ring.plot(fig)
+
+			fig.update_layout(template='plotly_dark',# autosize=False,
+					yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
+					margin=dict(l=0, r=20, b=0, t=0, pad=0),
+					showlegend=False,)
+			fig.show('notebook')
 
 
 
@@ -626,6 +678,8 @@ class Threader:
 		would be one "step".
 		"""
 		print(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
+		for i, tseg in enumerate(thread_list):
+			print(f'\t{i}. {tseg}')
 		steps = Steps(layer=layer, state=self.state)
 
 		#Get the thread segments to work on
