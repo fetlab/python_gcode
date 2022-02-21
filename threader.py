@@ -204,7 +204,7 @@ class TLayer(Cura4Layer):
 		anchors = self.model_isecs[tseg]['isec_points']
 		entry   = tseg.start_point
 		exit    = tseg.end_point
-		#TODO: why isn't there an entry/exit anchor for layer 50?
+
 		print(f'anchors with thread segment: {tseg}')
 		print(f'isec anchors: {anchors}')
 		if entry in self.in_out and entry.inside(self.geometry.outline):
@@ -339,6 +339,10 @@ class Ring:
 		return self.angle2point(self.angle)
 
 
+	def set_z(self, z):
+		self.center.z = z
+
+
 	def set_angle(self, new_angle:radians, direction=None):
 		"""Set a new angle for the ring. Optionally provide a preferred movement
 		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
@@ -348,10 +352,10 @@ class Ring:
 
 
 	def carrier_location(self, offset=0):
-		return Point(
+		return GPoint(
 			self.center.x + cos(self.angle)*(self.radius+offset),
 			self.center.y + sin(self.angle)*(self.radius+offset),
-			0
+			self.center.z
 		)
 
 
@@ -360,10 +364,10 @@ class Ring:
 		moving the ring. Assumes that the bed's bottom-left corner is (0,0).
 		Doesn't take into account a machine that uses bed movement for the y-axis,
 		but just add the y value to the return from this function."""
-		return Point(
+		return GPoint(
 			cos(angle) * self.radius + self.center.x,
 			sin(angle) * self.radius + self.center.y,
-			0
+			self.center.z
 		)
 
 
@@ -435,7 +439,7 @@ class State:
 		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=4)},
 	}
 
-	def __init__(self, bed, ring, style=None):
+	def __init__(self, bed, ring, z=0, style=None):
 		store_attr(but='style')
 		self.style = style_update(self._style, style)
 		self.anchor = Point(bed.anchor[0], bed.anchor[1], 0)
@@ -448,6 +452,11 @@ class State:
 	def freeze(self):
 		"""Return a copy of this State object, capturing the state."""
 		return deepcopy(self)
+
+
+	def set_z(self, z):
+		self.z = z
+		self.ring.set_z(z)
 
 
 	def thread(self) -> Segment:
@@ -471,6 +480,8 @@ class State:
 		if not any(thr.intersection(i) for i in avoid):
 			return
 
+		#TODO: this is the computational geometry visibility problem and should be
+		# done with a standard algorithm
 		#Next, try to move in increments around the current position to minimize movement time
 		# use angle2point()
 		for inc in range(10, 190, 10):
@@ -563,8 +574,8 @@ class Step:
 		#Plot gcode segments. The 'None' makes a break in a line so we can use
 		# just one add_trace() call.
 		style = style_update(self.style, style)
-		if len(self.gcsegs) < 10:
-			style['gc_segs']['line']['width'] = 3
+		# if len(self.gcsegs) < 10:
+		# 	style['gc_segs']['line']['width'] = 3
 		segs = {'x': [], 'y': []}
 		for seg in self.gcsegs:
 			segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
@@ -591,6 +602,7 @@ class Steps:
 	_style = {
 		'old_segs':   {'mode': 'lines', 'line': dict(color='gray')},
 		'old_thread': {'mode': 'lines', 'line': dict(color='blue')},
+		'old_layer':  {'mode': 'lines', 'line': dict(color='gray', dash='dot')},
 	}
 	def __init__(self, layer, state, style=None):
 		store_attr(but='style')
@@ -613,7 +625,7 @@ class Steps:
 		return self.current
 
 
-	def plot(self, style=None):
+	def plot(self, prev_layer:TLayer=None, style=None):
 		style = style_update(self.style, style)
 		steps = self.steps
 		anchor = steps[0].state.anchor
@@ -624,8 +636,15 @@ class Steps:
 
 			step.state.bed.plot(fig)
 
+			if stepnum == 0 and prev_layer:
+				prev_layer.plot(fig,
+						move_colors    = [style['old_layer']['line']['color']],
+						extrude_colors = [style['old_layer']['line']['color']],
+						only_outline   = True,
+				)
+
 			for i in range(0, stepnum):
-				steps[i].plot_gcsegments(fig, style=style['old_segs'])
+				steps[i].plot_gcsegments(fig, style={'gc_segs': style['old_segs']})
 				if i > 0:
 					steps[i].plot_thread(fig, steps[i-1].state.anchor,
 							style=style['old_thread'])
@@ -680,6 +699,8 @@ class Threader:
 		print(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
 		for i, tseg in enumerate(thread_list):
 			print(f'\t{i}. {tseg}')
+
+		self.state.set_z(layer.z)
 		steps = Steps(layer=layer, state=self.state)
 
 		#Get the thread segments to work on
@@ -688,29 +709,51 @@ class Threader:
 
 		if not thread:
 			print('Thread not in layer at all')
-			return
-		else:
-			with steps.new_step('Move thread out of the way') as s:
-				#rotate ring to avoid segments it shouldn't intersect
-				#context manager should store state when this step context finishes,
-				# so we should just be able to rotate the ring
-				#To rotate ring, we need to know: current anchor location and things thread
-				# shouldn't intersect
-				self.state.thread_avoid(layer.non_intersecting(thread))
+			return steps
+
+		"""
+		with steps.new_step('Move thread out of the way') as s:
+			#rotate ring to avoid segments it shouldn't intersect
+			#TODO: in the case where lots of segments are non-intersecting, we need
+			# to do a multi-step procedure to move the thread, print, then move the
+			# thread over the printed ones and print again.
+			self.state.thread_avoid(layer.non_intersecting(thread + [traj]))
 
 		with steps.new_step('Print non-intersecting layer segments') as s:
+			#TODO: this also needs to take into account the strand from the anchor to
+			# the ring, if we can't completely avoid printed geometry
 			s.add(layer.non_intersecting(thread))
+		"""
+
+		with steps.new_step('Set thread location') as s:
+			pass
 
 		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
-		for thread_seg in thread:
+		for i,thread_seg in enumerate(thread):
 			anchors = layer.anchors(thread_seg)
 			self.state.layer = layer
 			self.state.tseg = thread_seg
 			with steps.new_step(f'Move thread ({thread_seg}) to overlap anchor at {anchors[0]}') as s:
 				self.state.thread_intersect(anchors[0])
 
-			with steps.new_step('Print overlapping layers segments')	as s:
+			traj = self.state.thread().set_z(layer.z)
+
+			msg = (f'Print segments not overlapping thread trajectory {traj}' +
+						f' and {len(thread[i:])} remaining thread segments')
+			with steps.new_step(msg) as s:
+				layer.intersect_model(traj)
+				s.add(layer.non_intersecting(thread[i:] + [traj]))
+
+			with steps.new_step('Print overlapping layers segments')as s:
 				s.add(layer.intersecting(thread_seg))
+
+		remaining = [s for s in layer.geometry.segments if not s.printed]
+		if remaining:
+			with steps.new_step(f'Move thread {thread_seg} to avoid remaining geometry') as s:
+				self.state.thread_avoid(remaining)
+
+			with steps.new_step('Print remaining geometry') as s:
+				s.add(remaining)
 
 		print('[yellow]Done with thread for this layer[/];',
 				len([s for s in layer.geometry.segments if not s.printed]),

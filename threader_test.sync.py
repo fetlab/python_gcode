@@ -70,7 +70,7 @@ stepsobj49.plot()
 stepsobj50 = t.route_layer(thread_geom, g.layers[50])
 
 # %%
-stepsobj50.plot()
+stepsobj50.plot(g.layers[49])
 
 # %%
 import threader, geometry_helpers, parsers.cura4
