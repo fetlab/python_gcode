@@ -188,10 +188,11 @@ class GSegment(Geometry3D.Segment):
 	def set_z(self, z):
 		"""Set both endpoints of this Segment to a new z."""
 		if self.start_point.z == z and self.end_point.z == z:
-			return
+			return self
 		self.start_point.z = z
 		self.end_point.z = z
 		self.line = Geometry3D.Line(self.start_point, self.end_point)
+		return self
 
 
 """
