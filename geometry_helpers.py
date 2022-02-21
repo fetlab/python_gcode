@@ -33,7 +33,7 @@ def seg_combine(segs):
 	r = [segs[0]]
 	for seg in segs[1:]:
 		if seg.line == r[-1].line:
-			print(f'Combine {r[-1]}, {seg}', end='')
+			# print(f'Combine {r[-1]}, {seg}', end='')
 			if seg.end_point == r[-1].start_point:
 				r[-1] = GSegment(seg.start_point, r[-1].end_point)
 			elif r[-1].end_point == seg.start_point:
@@ -42,9 +42,9 @@ def seg_combine(segs):
 				s1 = GSegment(  seg.start_point, r[-1].end_point)
 				s2 = GSegment(r[-1].start_point,   seg.end_point)
 				r[-1] = max(s1, s2, key=lambda s: s.length())
-			print(f' -> {r[-1]}')
+			# print(f' -> {r[-1]}')
 		else:
-			print(f"Don't combine {r[-1]}, {seg}")
+			# print(f"Don't combine {r[-1]}, {seg}")
 			r.append(seg)
 	return r
 
