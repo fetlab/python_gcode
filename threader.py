@@ -636,7 +636,7 @@ class Steps:
 
 			step.state.bed.plot(fig)
 
-			if stepnum == 0 and prev_layer:
+			if prev_layer:
 				prev_layer.plot(fig,
 						move_colors    = [style['old_layer']['line']['color']],
 						extrude_colors = [style['old_layer']['line']['color']],
