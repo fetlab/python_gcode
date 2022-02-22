@@ -567,6 +567,7 @@ class Step:
 
 
 	def add(self, gcsegs):
+		print(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs')
 		for seg in gcsegs:
 			if not seg.printed:
 				self.gcsegs.append(seg)
@@ -635,7 +636,7 @@ class Steps:
 
 
 	def new_step(self, *messages):
-		self.steps.append(Step(self.state, ' '.join(messages)))
+		self.steps.append(Step(self.state, ' '.join(map(str,messages))))
 		return self.current
 
 
@@ -781,10 +782,14 @@ class Threader:
 			msg = (f'Print segments not overlapping thread trajectory {traj}',
 						 f'and {len(thread[i:])} remaining thread segments')
 			with steps.new_step(*msg) as s:
+				#BUG: intersect_model sets all segments' .printed = False, then we end
+				# up re-printing
 				layer.intersect_model(traj)
+				print(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
 				s.add(layer.non_intersecting(thread[i:] + [traj]))
 
-			with steps.new_step('Print overlapping layers segments')as s:
+			with steps.new_step('Print', len(layer.intersecting(thread_seg)),
+					'overlapping layers segments') as s:
 				s.add(layer.intersecting(thread_seg))
 
 		remaining = [s for s in layer.geometry.segments if not s.printed]
@@ -792,7 +797,7 @@ class Threader:
 			with steps.new_step(f'Move thread {thread_seg} to avoid remaining geometry') as s:
 				self.state.thread_avoid(remaining)
 
-			with steps.new_step('Print remaining geometry') as s:
+			with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
 				s.add(remaining)
 
 		print('[yellow]Done with thread for this layer[/];',
