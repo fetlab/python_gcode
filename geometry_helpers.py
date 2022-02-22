@@ -120,9 +120,14 @@ class GPoint(Point):
 		elif len(args) == 3:
 			super().__init__(*args)
 			self.line = None
-		else:
-			super().__init__(*args, z)
+		elif len(args) == 2:
+			if isinstance(args[0], Point):
+				super().__init__(args[0].x, args[0].y, z)
+			else:
+				super().__init__(*args, z)
 			self.line = None
+		else:
+			raise ValueError(f"Can't init GPoint with args {args}")
 
 
 	def as2d(self):

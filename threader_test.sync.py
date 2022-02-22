@@ -65,12 +65,14 @@ stepsobj49 = t.route_layer(thread_geom, g.layers[49])
 stepsobj49.plot()
 
 # %%
-#TODO NEXT: avoid thread in this layer when printing, and move thread so we can
-# print the avoided areas
 stepsobj50 = t.route_layer(thread_geom, g.layers[50])
 
 # %%
 stepsobj50.plot(g.layers[49])
+
+# %%
+stepsobj49.steps[0].state.anchor, stepsobj49.steps[1].state.anchor
+
 
 # %%
 import threader, geometry_helpers, parsers.cura4

@@ -11,6 +11,12 @@ from parsers.cura4 import Cura4Layer
 from time import time
 from itertools import cycle
 
+"""
+Usage notes:
+	* The thread should be anchored on the bed such that it doesn't intersect the
+		model on the way to its first model-anchor point.
+"""
+
 """TODO:
 	* [X] layer.intersect(thread)
 	* [ ] gcode generator for ring
@@ -408,13 +414,18 @@ class Ring:
 
 class Bed:
 	__repr__ = basic_repr('anchor')
+
 	#Default plotting style
 	_style = {
-			'bed': {'line': dict(color='rgba(0,0,0,0)'), 'fillcolor': 'LightSkyBlue',
-				'opacity':.25},
+			'bed': {'line': dict(color='rgba(0,0,0,0)'),
+							'fillcolor': 'LightSkyBlue',
+							'opacity':.25,
+						 },
 	}
 
-	def __init__(self, anchor=(0,0), size=(220, 220), style=None):
+	def __init__(self, anchor=(0, 0, 0), size=(220, 220), style=None):
+		"""Anchor is where the thread is initially anchored on the bed. Size is the
+		size of the bed. Both are in mm."""
 		self.anchor = GPoint(*anchor)
 		self.size   = size
 		self.style = style_update(self._style, style)
@@ -434,15 +445,19 @@ class Bed:
 
 
 class State:
+	"""Maintains the state of the printer/ring system. Holds references to the
+	Ring and Bed objects.
+	"""
 	_style = {
 		'thread': {'mode':'lines', 'line': dict(color='white', width=1, dash='dot')},
 		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=4)},
 	}
 
-	def __init__(self, bed, ring, z=0, style=None):
+	def __init__(self, bed:Bed, ring:Ring, z=0, style=None):
 		store_attr(but='style')
 		self.style = style_update(self._style, style)
-		self.anchor = Point(bed.anchor[0], bed.anchor[1], 0)
+		self.ring.set_z(z)
+		self.anchor = GPoint(bed.anchor[0], bed.anchor[1], z)
 
 
 	def __repr__(self):
@@ -570,21 +585,20 @@ class Step:
 		self.state = self.state.freeze()
 
 
-	def plot_gcsegments(self, fig, style=None):
+	def plot_gcsegments(self, fig, gcsegs=None, style=None):
 		#Plot gcode segments. The 'None' makes a break in a line so we can use
 		# just one add_trace() call.
 		style = style_update(self.style, style)
-		# if len(self.gcsegs) < 10:
-		# 	style['gc_segs']['line']['width'] = 3
 		segs = {'x': [], 'y': []}
-		for seg in self.gcsegs:
+		segs_to_plot = gcsegs if gcsegs is not None else self.gcsegs
+		for seg in segs_to_plot:
 			segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
 			segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
 		fig.add_trace(go.Scatter(**segs, name='gc_segs', **style['gc_segs']))
 
 
 	def plot_thread(self, fig, start:Point, style=None):
-		#Plot a thread segment, starting at 'start'
+		#Plot a thread segment, starting at 'start', ending at the current anchor
 		if start == self.state.anchor:
 			return
 		style = style_update(self.style, style)
@@ -620,22 +634,24 @@ class Steps:
 		return self.steps[-1] if self.steps else None
 
 
-	def new_step(self, name=''):
-		self.steps.append(Step(self.state, name))
+	def new_step(self, *messages):
+		self.steps.append(Step(self.state, ' '.join(messages)))
 		return self.current
 
 
 	def plot(self, prev_layer:TLayer=None, style=None):
 		style = style_update(self.style, style)
 		steps = self.steps
-		anchor = steps[0].state.anchor
+		last_anchor = steps[0].state.anchor
 
 		for stepnum,step in enumerate(steps):
 			print(f'Step {stepnum}: {step.name}')
 			fig = go.Figure()
 
+			#Plot the bed
 			step.state.bed.plot(fig)
 
+			#Plot the outline of the previous layer, if provided
 			if prev_layer:
 				prev_layer.plot(fig,
 						move_colors    = [style['old_layer']['line']['color']],
@@ -643,33 +659,57 @@ class Steps:
 						only_outline   = True,
 				)
 
+			#Plot the thread from the bed anchor to the first step's anchor
+			steps[0].plot_thread(fig,
+					steps[0].state.bed.anchor,
+					# style=({'thread': style['old_thread']} if stepnum > 0 else None)
+			)
+
+			#Plot any geometry that was printed in the previous step
+			if stepnum > 0:
+				segs = set.union(*[set(s.gcsegs) for s in steps[:stepnum]])
+				steps[stepnum-1].plot_gcsegments(fig, segs,
+						style={'gc_segs': style['old_segs']})
+
+			#Plot geometry and thread from previous steps
 			for i in range(0, stepnum):
-				steps[i].plot_gcsegments(fig, style={'gc_segs': style['old_segs']})
+
+				#Plot the thread from the previous steps's anchor to the current step's
+				# anchor
 				if i > 0:
-					steps[i].plot_thread(fig, steps[i-1].state.anchor,
-							style=style['old_thread'])
+					steps[i].plot_thread(fig,
+							steps[i-1].state.anchor,
+							style={'thread': style['old_thread']},
+					)
+
+			#Plot geometry printed in this step
 			step.plot_gcsegments(fig)
 
-			if hasattr(step.state, 'tseg'):
-				step.state.plot_anchor(fig)
-				tseg = step.state.tseg
+			#Plot thread trajectory from current anchor to ring
+			step.state.plot_thread_to_ring(fig)
 
-				if enter := getattr(tseg.start_point, 'in_out', None):
+			#Plot thread from last step's anchor to current anchor
+			step.plot_thread(fig, last_anchor)
+			last_anchor = step.state.anchor
+
+			#Plot anchor/enter/exit points if any
+			if thread_seg := getattr(step.state, 'thread_seg', None):
+				step.state.plot_anchor(fig)
+
+				if enter := getattr(thread_seg.start_point, 'in_out', None):
 					if enter.inside(step.state.layer.geometry.outline):
 						fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
 							marker=dict(color='yellow', symbol='x', size=8), name='enter'))
 
-				if exit := getattr(tseg.end_point, 'in_out', None):
+				if exit := getattr(thread_seg.end_point, 'in_out', None):
 					if exit.inside(step.state.layer.geometry.outline):
 						fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
 							marker=dict(color='orange', symbol='x', size=8), name='exit'))
 
-			step.state.plot_thread_to_ring(fig)
-			step.plot_thread(fig, anchor)
-			anchor = step.state.anchor
-
+			#Plot the ring
 			step.state.ring.plot(fig)
 
+			#Show the figure for this step
 			fig.update_layout(template='plotly_dark',# autosize=False,
 					yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
 					margin=dict(l=0, r=20, b=0, t=0, pad=0),
@@ -725,22 +765,22 @@ class Threader:
 			s.add(layer.non_intersecting(thread))
 		"""
 
-		with steps.new_step('Set thread location') as s:
-			pass
+		# with steps.new_step('Set thread location') as s:
+		# 	pass
 
 		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
 		for i,thread_seg in enumerate(thread):
 			anchors = layer.anchors(thread_seg)
 			self.state.layer = layer
-			self.state.tseg = thread_seg
+			self.state.thread_seg = thread_seg
 			with steps.new_step(f'Move thread ({thread_seg}) to overlap anchor at {anchors[0]}') as s:
 				self.state.thread_intersect(anchors[0])
 
 			traj = self.state.thread().set_z(layer.z)
 
-			msg = (f'Print segments not overlapping thread trajectory {traj}' +
-						f' and {len(thread[i:])} remaining thread segments')
-			with steps.new_step(msg) as s:
+			msg = (f'Print segments not overlapping thread trajectory {traj}',
+						 f'and {len(thread[i:])} remaining thread segments')
+			with steps.new_step(*msg) as s:
 				layer.intersect_model(traj)
 				s.add(layer.non_intersecting(thread[i:] + [traj]))
 
