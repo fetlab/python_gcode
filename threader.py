@@ -3,7 +3,7 @@ from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance
 from math import radians, sin, cos, degrees
 from typing import List
-from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine
+from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine, GCLine
 from fastcore.basics import basic_repr, store_attr
 from rich import print
 from math import atan2
@@ -326,27 +326,20 @@ class TLayer(Cura4Layer):
 
 class Ring:
 	"""A class representing the ring and thread carrier."""
-	#Defaults
-	_radius = 110  #mm
-	_angle  = 0    #radians
-	_center = Point(110, 110, 0) #mm
-
 	#Default plotting style
 	style = {
 		'ring':      {'line': dict(color='white', width=10), 'opacity':.25},
 		'indicator': {'line': dict(color='blue',  width= 4)},
 	}
 
-	__repr__ = basic_repr('_radius,_angle,_center')
+	__repr__ = basic_repr('_radius,_angle,center')
 
-	def __init__(self, radius=_radius, angle:radians=_angle, center=_center):
-		store_attr()
+	def __init__(self, radius=110, angle=0, center:GPoint=None):
+		self.radius        = radius
 		self._angle        = angle
 		self.initial_angle = angle
+		self.center = center or GPoint(radius, 0, 0)
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=50)
-		self.x_axis        = Vector(self.center,
-																Point(self.center.x + self.radius,
-																			self.center.y, self.center.z))
 
 
 	def __repr__(self):
@@ -368,10 +361,25 @@ class Ring:
 		return self.angle2point(self.angle)
 
 
-	def set_z(self, z):
-		"""Set the z-height of the bed/ring system, so that z-coordinates returned
-		from this class are correct for a given layer."""
-		self.center.z = z
+	@property
+	def x(self): return self.center.x
+
+	@x.setter
+	def x(self, new_x): self.center.x = new_x
+
+
+	@property
+	def y(self): return self.center.y
+
+	@y.setter
+	def y(self, new_y): self.center.y = new_y
+
+
+	@property
+	def z(self): return self.center.z
+
+	@z.setter
+	def z(self, new_z): self.center.z = new_z
 
 
 	def set_angle(self, new_angle:radians, direction=None):
@@ -409,12 +417,20 @@ class Ring:
 
 
 	def plot(self, fig, style=None):
-		fig.add_trace(go.Scatter(
-			**segs_xy(*list(self.geometry.segments()),
-				name='ring', **self.style['ring'])))
-		update_figure(fig, 'ring', style)
+		# fig.add_trace(go.Scatter(
+		# 	**segs_xy(*list(self.geometry.segments()),
+		# 		name='ring', **self.style['ring'])))
+		fig.add_shape(
+			name='ring',
+			type='circle',
+			xref='x', yref='y',
+			x0=self.center.x-self.radius, y0=self.center.y-self.radius,
+			x1=self.center.x+self.radius, y1=self.center.y+self.radius,
+			**self.style['ring'],
+		)
+		update_figure(fig, 'ring', style, what='shapes')
 
-		ringwidth = next(fig.select_traces(selector={'name':'ring'})).line.width
+		ringwidth = next(fig.select_shapes(selector={'name':'ring'})).line.width
 
 		c1 = self.carrier_location(offset=-ringwidth/2)
 		c2 = self.carrier_location(offset=ringwidth/2)
@@ -432,8 +448,6 @@ class Ring:
 
 class Bed:
 	"""A class representing the print bed."""
-	__repr__ = basic_repr('anchor')
-
 	#Default plotting style
 	style = {
 			'bed': {'line': dict(color='rgba(0,0,0,0)'),
@@ -451,6 +465,10 @@ class Bed:
 		#Current gcode coordinates of the bed
 		self.x      = 0
 		self.y      = 0
+
+
+	def __repr__(self):
+		return f'Bed({self.x}, {self.y}, ⚓︎{self.anchor})'
 
 
 	def plot(self, fig, style=None):
@@ -475,14 +493,52 @@ class Printer:
 		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=4)},
 	}
 
-	def __init__(self, bed:Bed, ring:Ring, z=0):
-		store_attr()
-		self.ring.set_z(z)
-		self.anchor = GPoint(bed.anchor[0], bed.anchor[1], z)
+	def __init__(self, z=0):
+		self._x, self._y, self._z = 0, 0, 0
+		self.bed  = Bed()
+		self.ring = Ring(center=GPoint(110, 0, z))
+
+		self._anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
 
 	def __repr__(self):
-		return f'State(Bed, {self.ring})'
+		return f'Printer({self.bed}, {self.ring})'
+
+
+	@property
+	def anchor(self):
+		"""Return the current anchor, adjusted for the bed position."""
+		return self._anchor
+
+	@anchor.setter
+	def anchor(self, new_anchor):
+		self._anchor = new_anchor
+
+
+	@property
+	def x(self): return self._x
+
+	@x.setter
+	def x(self, new_x):
+		self._x = new_x
+
+
+	@property
+	def y(self): return self._y
+
+	@y.setter
+	def y(self, new_y):
+		self._y     = new_y
+		self.ring.y = new_y   #Offset the ring coordinate system relative to the bed
+
+
+	@property
+	def z(self): return self._z
+
+	@z.setter
+	def z(self, new_z):
+		self._z = new_z
+		self.ring.z = new_z
 
 
 	def freeze_state(self):
@@ -490,9 +546,11 @@ class Printer:
 		return deepcopy(self)
 
 
-	def set_z(self, z):
-		self.z = z
-		self.ring.set_z(z)
+	def execute_gcode(self, gcline:GCLine):
+		"""Update the printer state according to the passed line of gcode."""
+		if gcline.is_xymove():
+			self.x = gcline.args['X']
+			self.y = gcline.args['Y']
 
 
 	def thread(self) -> Segment:
@@ -734,10 +792,12 @@ class Steps:
 
 		print('Finished routing this layer')
 
+
+
 class Threader:
 	def __init__(self, gcode):
 		store_attr()
-		self.printer = Printer(Bed(), Ring())
+		self.printer = Printer()
 
 
 	def route_model(self, thread):
@@ -756,7 +816,7 @@ class Threader:
 		for i, tseg in enumerate(thread_list):
 			print(f'\t{i}. {tseg}')
 
-		self.printer.set_z(layer.z)
+		self.printer.z = layer.z
 		steps = Steps(layer=layer, printer=self.printer)
 
 		#Get the thread segments to work on
@@ -783,6 +843,13 @@ class Threader:
 
 		# with steps.new_step('Set thread location') as s:
 		# 	pass
+
+		#TODO: we might need to execute lines of gcode until we get to the first
+		# extrusion line, so that the first thread anchor is not outside of the
+		# ring! ... but that might be counterproductive if we want to avoid
+		# unnecessary movements since the first thing we print might not actually
+		# be the first line of gcode? Possibly then use the layer extents to figure
+		# this out.
 
 		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
 		for i,thread_seg in enumerate(thread):
