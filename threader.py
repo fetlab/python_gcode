@@ -30,18 +30,33 @@ Usage notes:
 					gcode info such as move speed and extrusion amount
 					* But a Segment represents two lines of gcode as vertices....
 	* [X] Order isecs['isec_points'] in the Layer.anchors() method
-	* [ ] Take care of moving to start point of a Segment after an order change
+	* [ ] gcode -> move to start point of a Segment after a print order change
 """
 
 
-def update_traces(fig, name, style):
-	"""Update traces for the passed figure object for traces with the given name.
-	style should be a dict like {name: {'line': {'color': 'red'}}} .
+def update_figure(fig, name, style, what='traces'):
+	"""Update traces, shapes, etc for the passed figure object for figure members with
+	the given name.  style should be a dict like {name: {'line': {'color': 'red'}}} .
 	"""
 	if style and name in style:
-		fig.update_traces(selector={'name':name}, **style[name])
+		getattr(fig, f'update_{what}')(selector={'name':name}, **style[name])
+
+
 
 class GCodeException(Exception):
+	"""Utility class so we can get an object for debugging easily. Use in this
+	code like:
+
+		raise GCodeException(segs, 'here are segments')
+
+	then (e.g. in Jupyter notebook):
+
+		try:
+			steps.plot()
+		except GCodeException as e:
+			print(len(e.obj), 'segments to print')
+	"""
+
 	def __init__(self, obj, message):
 		self.obj = obj
 		self.message = message
@@ -49,18 +64,22 @@ class GCodeException(Exception):
 
 
 class TLayer(Cura4Layer):
+	"""A gcode layer that has thread in it."""
 	def __init__(self, *args, layer_height=0.4, **kwargs):
 		super().__init__(*args, **kwargs)
-		self.geometry = None
+		self.geometry     = None
 		self.layer_height = layer_height
-		self.model_isecs = {}
-		self.in_out = []
+		self.model_isecs  = {}
+		self.in_out       = []
 
 
 	def plot(self, fig,
-			move_colors=plotly.colors.qualitative.Set2,
-			extrude_colors=plotly.colors.qualitative.Dark2,
+			move_colors:List=plotly.colors.qualitative.Set2,
+			extrude_colors:List=plotly.colors.qualitative.Dark2,
 			plot3d=False, only_outline=True):
+		"""Plot the geometry making up this layer. Set only_outline to True to
+		print only the outline of the gcode in the layer .
+		"""
 		self.add_geometry()
 		colors = cycle(zip(extrude_colors, move_colors))
 
@@ -106,8 +125,14 @@ class TLayer(Cura4Layer):
 
 
 	def add_geometry(self):
-		"""Add geometry to this Layer based on the list of lines, using
-		GSegment."""
+		"""Add geometry to this Layer based on the list of gcode lines:
+			- segments: a list of GSegments for each pair of extrusion lines
+			- planes:   planes representing the top and bottom boundaries of the
+								  layer, based on the layer height
+			- outline:  a list of GSegments representing the outline of the layer,
+									denoted by sections in Cura-generated gcode starting with
+									";TYPE:WALL-OUTER"
+		"""
 		if self.geometry or not self.has_moves:
 			return
 		self.geometry = Geometry(segments=[], planes=None, outline=[])
@@ -300,6 +325,7 @@ class TLayer(Cura4Layer):
 
 
 class Ring:
+	"""A class representing the ring and thread carrier."""
 	#Defaults
 	_radius = 110  #mm
 	_angle  = 0    #radians
@@ -315,7 +341,6 @@ class Ring:
 
 	def __init__(self, radius=_radius, angle:radians=_angle, center=_center):
 		store_attr()
-
 		self._angle        = angle
 		self.initial_angle = angle
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=50)
@@ -344,6 +369,8 @@ class Ring:
 
 
 	def set_z(self, z):
+		"""Set the z-height of the bed/ring system, so that z-coordinates returned
+		from this class are correct for a given layer."""
 		self.center.z = z
 
 
@@ -385,7 +412,7 @@ class Ring:
 		fig.add_trace(go.Scatter(
 			**segs_xy(*list(self.geometry.segments()),
 				name='ring', **self.style['ring'])))
-		update_traces(fig, 'ring', style)
+		update_figure(fig, 'ring', style)
 
 		ringwidth = next(fig.select_traces(selector={'name':'ring'})).line.width
 
@@ -399,12 +426,12 @@ class Ring:
 			x1=c2.x, y1=c2.y,
 			**self.style['indicator'],
 		)
-		if style and 'indicator' in style:
-			fig.update_shapes(selector={'name':'indicator'}, **style['indicator'])
+		update_figure(fig, 'indicator', style, what='shapes')
 
 
 
 class Bed:
+	"""A class representing the print bed."""
 	__repr__ = basic_repr('anchor')
 
 	#Default plotting style
@@ -421,17 +448,21 @@ class Bed:
 		self.anchor = GPoint(*anchor)
 		self.size   = size
 
+		#Current gcode coordinates of the bed
+		self.x      = 0
+		self.y      = 0
+
 
 	def plot(self, fig, style=None):
 		fig.add_shape(
 			name='bed',
 			type='rect',
-			xref='x', yref='y',
-			x0=0, y0=0,
-			x1=self.size[0], y1=self.size[1],
+			xref='x',                 yref='y',
+			x0=self.x,                y0=self.y,
+			x1=self.x + self.size[0], y1=self.y + self.size[1],
 			**self.style['bed'],
 		)
-		update_traces(fig, 'bed', style)
+		update_figure(fig, 'bed', style, what='shapes')
 
 
 
@@ -530,13 +561,13 @@ class State:
 		#Plot a thread from the current anchor to the carrier
 		fig.add_trace(go.Scatter(**segs_xy(self.thread(),
 			name='thread', **self.style['thread'])))
-		update_traces(fig, 'thread', style)
+		update_figure(fig, 'thread', style)
 
 
 	def plot_anchor(self, fig, style=None):
 		fig.add_trace(go.Scatter(x=[self.anchor.x], y=[self.anchor.y],
 			name='anchor', **self.style['anchor']))
-		update_traces(fig, 'anchor', style)
+		update_figure(fig, 'anchor', style)
 
 
 
@@ -585,7 +616,7 @@ class Step:
 			segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
 			segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
 		fig.add_trace(go.Scatter(**segs, name='gc_segs', **self.style['gc_segs']))
-		update_traces(fig, 'gc_segs', style)
+		update_figure(fig, 'gc_segs', style)
 
 
 	def plot_thread(self, fig, start:Point, style=None):
@@ -597,7 +628,7 @@ class Step:
 			y=[start.y, self.state.anchor.y],
 			**self.style['thread'],
 		))
-		update_traces(fig, 'thread', style)
+		update_figure(fig, 'thread', style)
 
 
 class Steps:
