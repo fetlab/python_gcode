@@ -1,4 +1,4 @@
-	"""
+"""
 	#Plot top/bottom planes for the layer
 	xx = list(filter(None, x)); yy = list(filter(None, y))
 	zz = g.layers[53].z - 0.2
@@ -13,7 +13,7 @@
 			y=[min(yy), max(yy), max(yy), min(yy)],
 			z=[zz,		 zz,		 zz,		 zz],
 			opacity=.5))
-"""
+
 # %%
 def plot_layer(layer, thread_geom=[]):
 	fig = go.FigureWidget()
@@ -108,4 +108,4 @@ def frames2subplots(frames, titles=[]):
 		for trace in frame:
 			fig.add_trace(trace, row=i+1, col=1)
 	return fig
-
+"""
