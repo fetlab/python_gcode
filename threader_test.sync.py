@@ -48,7 +48,7 @@ from parsers import cura4
 reload(geometry_helpers)
 reload(threader)
 reload(cura4)
-from threader import TLayer, Threader
+from threader import TLayer, Threader, GCodeException
 page_wide()
 
 # %%
@@ -62,19 +62,17 @@ t = Threader(g)
 
 # %%
 stepsobj49 = t.route_layer(thread_geom, g.layers[49])
-
-# %%
 stepsobj49.plot()
 
 # %%
 stepsobj50 = t.route_layer(thread_geom, g.layers[50])
-
-# %%
 stepsobj50.plot(g.layers[49])
 
 # %%
-stepsobj49.steps[0].state.anchor, stepsobj49.steps[1].state.anchor
+stepsobj60 = t.route_layer(thread_geom, g.layers[60])
 
+# %%
+stepsobj60.plot()
 
 # %%
 import threader, geometry_helpers, parsers.cura4
@@ -107,24 +105,6 @@ fig.update_scenes(
 		),
 )
 
-fig.show('notebook')
-
-# %%
-l = g.layers[49]
-l.intersect(thread_geom)
-#enter, exit = l._isecs[thread_geom[0]]['enter'], l._isecs[thread_geom[0]]['exit']
-print(l._isecs[thread_geom[0]])
-
-fig = go.Figure()
-l.plot(fig)
-fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(thread_geom[0],
-	mode='lines', line=dict(color='green',  width=2))))
-fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], marker=dict(color='red',
-	symbol='x', size=8)))
-# fig.add_trace(go.Scatter(x=[enter.x, exit.x], y=[enter.y, exit.y],
-# 	line=dict(color='red', width=2)))
-print(thread_geom[0])
-print(enter, exit)
 fig.show('notebook')
 
 # %%

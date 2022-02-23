@@ -33,16 +33,13 @@ Usage notes:
 	* [ ] Take care of moving to start point of a Segment after an order change
 """
 
-def style_update(old_style, new_style):
-	style = deepcopy(old_style)
-	if new_style is not None:
-		for item in new_style:
-			if item in style:
-				style[item].update(new_style[item])
-			else:
-				style[item] = new_style[item]
-	return style
 
+def update_traces(fig, name, style):
+	"""Update traces for the passed figure object for traces with the given name.
+	style should be a dict like {name: {'line': {'color': 'red'}}} .
+	"""
+	if style and name in style:
+		fig.update_traces(selector={'name':name}, **style[name])
 
 class GCodeException(Exception):
 	def __init__(self, obj, message):
@@ -99,10 +96,12 @@ class TLayer(Cura4Layer):
 
 
 			if Esegs['x']:
-				fig.add_trace(scatter(**Esegs, mode='lines', name=repr(gcline).lower(),
+				fig.add_trace(scatter(**Esegs, mode='lines',
+					name='Ex'+(repr(gcline).lower()),
 					line=dict(color=colorD, **lineprops), **plotprops))
 			if Msegs['x']:
-				fig.add_trace(scatter(**Msegs, mode='lines', name=repr(gcline).lower(),
+				fig.add_trace(scatter(**Msegs, mode='lines',
+					name='Mx'+(repr(gcline).lower()),
 					line=dict(color=colorL, dash='dot', **lineprops), **plotprops))
 
 
@@ -244,7 +243,8 @@ class TLayer(Cura4Layer):
 		}
 
 		for gcseg in self.geometry.segments:
-			gcseg.printed = False
+			if not hasattr(gcseg, 'printed'):
+				gcseg.printed = False
 			inter = gcseg.intersection(tseg)
 			if inter:
 				isecs['isec_segs'  ].append(gcseg)
@@ -306,15 +306,15 @@ class Ring:
 	_center = Point(110, 110, 0) #mm
 
 	#Default plotting style
-	_style = {
+	style = {
 		'ring':      {'line': dict(color='white', width=10), 'opacity':.25},
 		'indicator': {'line': dict(color='blue',  width= 4)},
 	}
 
 	__repr__ = basic_repr('_radius,_angle,_center')
 
-	def __init__(self, radius=_radius, angle:radians=_angle, center=_center, style=None):
-		store_attr(but='style')
+	def __init__(self, radius=_radius, angle:radians=_angle, center=_center):
+		store_attr()
 
 		self._angle        = angle
 		self.initial_angle = angle
@@ -322,8 +322,6 @@ class Ring:
 		self.x_axis        = Vector(self.center,
 																Point(self.center.x + self.radius,
 																			self.center.y, self.center.z))
-
-		self.style = style_update(self._style, style)
 
 
 	def __repr__(self):
@@ -384,31 +382,25 @@ class Ring:
 
 
 	def plot(self, fig, style=None):
-		style = style_update(self.style, style)
-		"""
-		fig.add_shape(
-			name='ring',
-			type='circle',
-			xref='x', yref='y',
-			x0=self.center.x-self.radius,
-			y0=self.center.y-self.radius,
-			x1=self.center.x+self.radius,
-			y1=self.center.y+self.radius,
-			**style['ring'],
-		)
-		"""
-		fig.add_trace(go.Scatter(**segs_xy(*list(self.geometry.segments()), **style['ring'])))
-		ringwidth = style['ring']['line']['width']/2
+		fig.add_trace(go.Scatter(
+			**segs_xy(*list(self.geometry.segments()),
+				name='ring', **self.style['ring'])))
+		update_traces(fig, 'ring', style)
+
+		ringwidth = next(fig.select_traces(selector={'name':'ring'})).line.width
+
 		c1 = self.carrier_location(offset=-ringwidth/2)
 		c2 = self.carrier_location(offset=ringwidth/2)
 		fig.add_shape(
-			name='ring_indicator',
+			name='indicator',
 			type='line',
 			xref='x', yref='y',
 			x0=c1.x, y0=c1.y,
 			x1=c2.x, y1=c2.y,
-			**style['indicator'],
+			**self.style['indicator'],
 		)
+		if style and 'indicator' in style:
+			fig.update_shapes(selector={'name':'indicator'}, **style['indicator'])
 
 
 
@@ -416,31 +408,30 @@ class Bed:
 	__repr__ = basic_repr('anchor')
 
 	#Default plotting style
-	_style = {
+	style = {
 			'bed': {'line': dict(color='rgba(0,0,0,0)'),
 							'fillcolor': 'LightSkyBlue',
 							'opacity':.25,
 						 },
 	}
 
-	def __init__(self, anchor=(0, 0, 0), size=(220, 220), style=None):
+	def __init__(self, anchor=(0, 0, 0), size=(220, 220)):
 		"""Anchor is where the thread is initially anchored on the bed. Size is the
 		size of the bed. Both are in mm."""
 		self.anchor = GPoint(*anchor)
 		self.size   = size
-		self.style = style_update(self._style, style)
 
 
 	def plot(self, fig, style=None):
-		style = style_update(self.style, style)
 		fig.add_shape(
 			name='bed',
 			type='rect',
 			xref='x', yref='y',
 			x0=0, y0=0,
 			x1=self.size[0], y1=self.size[1],
-			**style['bed'],
+			**self.style['bed'],
 		)
+		update_traces(fig, 'bed', style)
 
 
 
@@ -448,14 +439,13 @@ class State:
 	"""Maintains the state of the printer/ring system. Holds references to the
 	Ring and Bed objects.
 	"""
-	_style = {
+	style = {
 		'thread': {'mode':'lines', 'line': dict(color='white', width=1, dash='dot')},
 		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=4)},
 	}
 
-	def __init__(self, bed:Bed, ring:Ring, z=0, style=None):
-		store_attr(but='style')
-		self.style = style_update(self._style, style)
+	def __init__(self, bed:Bed, ring:Ring, z=0):
+		store_attr()
 		self.ring.set_z(z)
 		self.anchor = GPoint(bed.anchor[0], bed.anchor[1], z)
 
@@ -538,28 +528,28 @@ class State:
 
 	def plot_thread_to_ring(self, fig, style=None):
 		#Plot a thread from the current anchor to the carrier
-		style = style_update(self.style, style)
-		fig.add_trace(go.Scatter(**segs_xy(self.thread(), **style['thread'])))
+		fig.add_trace(go.Scatter(**segs_xy(self.thread(),
+			name='thread', **self.style['thread'])))
+		update_traces(fig, 'thread', style)
 
 
 	def plot_anchor(self, fig, style=None):
-		style = style_update(self.style, style)
 		fig.add_trace(go.Scatter(x=[self.anchor.x], y=[self.anchor.y],
-			name='state anchor', **style['anchor']))
+			name='anchor', **self.style['anchor']))
+		update_traces(fig, 'anchor', style)
 
 
 
 class Step:
 	#Default plotting style
-	_style = {
+	style = {
 		'gc_segs': {'mode':'lines', 'line': dict(color='green',  width=1)},
 		'thread':  {'mode':'lines', 'line': dict(color='yellow', width=1, dash='dot')},
 	}
 
-	def __init__(self, state, name='', style=None):
-		store_attr(but='style')
+	def __init__(self, state, name=''):
+		store_attr()
 		self.gcsegs = []
-		self.style  = style_update(self._style, style)
 
 
 	def __repr__(self):
@@ -589,39 +579,36 @@ class Step:
 	def plot_gcsegments(self, fig, gcsegs=None, style=None):
 		#Plot gcode segments. The 'None' makes a break in a line so we can use
 		# just one add_trace() call.
-		style = style_update(self.style, style)
 		segs = {'x': [], 'y': []}
 		segs_to_plot = gcsegs if gcsegs is not None else self.gcsegs
 		for seg in segs_to_plot:
 			segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
 			segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
-		fig.add_trace(go.Scatter(**segs, name='gc_segs', **style['gc_segs']))
+		fig.add_trace(go.Scatter(**segs, name='gc_segs', **self.style['gc_segs']))
+		update_traces(fig, 'gc_segs', style)
 
 
 	def plot_thread(self, fig, start:Point, style=None):
 		#Plot a thread segment, starting at 'start', ending at the current anchor
 		if start == self.state.anchor:
 			return
-		style = style_update(self.style, style)
 		fig.add_trace(go.Scatter(
 			x=[start.x, self.state.anchor.x],
 			y=[start.y, self.state.anchor.y],
-			**style['thread'],
+			**self.style['thread'],
 		))
-		# print(f'thread ({style["thread"]["line"]["color"]}): {start} -> {self.state.anchor}')
-
+		update_traces(fig, 'thread', style)
 
 
 class Steps:
 	#Default plotting style
-	_style = {
-		'old_segs':   {'mode': 'lines', 'line': dict(color='gray')},
-		'old_thread': {'mode': 'lines', 'line': dict(color='blue')},
-		'old_layer':  {'mode': 'lines', 'line': dict(color='gray', dash='dot')},
+	style = {
+		'old_segs':   {'line_color': 'gray'},
+		'old_thread': {'line_color': 'blue'},
+		'old_layer':  {'line': dict(color='gray', dash='dot')},
 	}
-	def __init__(self, layer, state, style=None):
-		store_attr(but='style')
-		self.style = style_update(self._style, style)
+	def __init__(self, layer, state):
+		store_attr()
 		self.steps = []
 		self._current_step = None
 
@@ -640,8 +627,7 @@ class Steps:
 		return self.current
 
 
-	def plot(self, prev_layer:TLayer=None, style=None):
-		style = style_update(self.style, style)
+	def plot(self, prev_layer:TLayer=None):
 		steps = self.steps
 		last_anchor = steps[0].state.anchor
 
@@ -655,22 +641,19 @@ class Steps:
 			#Plot the outline of the previous layer, if provided
 			if prev_layer:
 				prev_layer.plot(fig,
-						move_colors    = [style['old_layer']['line']['color']],
-						extrude_colors = [style['old_layer']['line']['color']],
+						move_colors    = [self.style['old_layer']['line']['color']],
+						extrude_colors = [self.style['old_layer']['line']['color']],
 						only_outline   = True,
 				)
 
 			#Plot the thread from the bed anchor to the first step's anchor
-			steps[0].plot_thread(fig,
-					steps[0].state.bed.anchor,
-					# style=({'thread': style['old_thread']} if stepnum > 0 else None)
-			)
+			steps[0].plot_thread(fig, steps[0].state.bed.anchor)
 
 			#Plot any geometry that was printed in the previous step
 			if stepnum > 0:
 				segs = set.union(*[set(s.gcsegs) for s in steps[:stepnum]])
 				steps[stepnum-1].plot_gcsegments(fig, segs,
-						style={'gc_segs': style['old_segs']})
+						style={'gc_segs': self.style['old_segs']})
 
 			#Plot geometry and thread from previous steps
 			for i in range(0, stepnum):
@@ -680,7 +663,7 @@ class Steps:
 				if i > 0:
 					steps[i].plot_thread(fig,
 							steps[i-1].state.anchor,
-							style={'thread': style['old_thread']},
+							style={'thread': self.style['old_thread']},
 					)
 
 			#Plot geometry printed in this step
@@ -717,7 +700,7 @@ class Steps:
 					showlegend=False,)
 			fig.show('notebook')
 
-
+		print('Finished routing this layer')
 
 class Threader:
 	def __init__(self, gcode):
