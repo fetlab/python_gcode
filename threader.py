@@ -466,7 +466,7 @@ class Bed:
 
 
 
-class State:
+class Printer:
 	"""Maintains the state of the printer/ring system. Holds references to the
 	Ring and Bed objects.
 	"""
@@ -485,8 +485,8 @@ class State:
 		return f'State(Bed, {self.ring})'
 
 
-	def freeze(self):
-		"""Return a copy of this State object, capturing the state."""
+	def freeze_state(self):
+		"""Return a copy of this Printer object, capturing the state."""
 		return deepcopy(self)
 
 
@@ -578,13 +578,13 @@ class Step:
 		'thread':  {'mode':'lines', 'line': dict(color='yellow', width=1, dash='dot')},
 	}
 
-	def __init__(self, state, name=''):
+	def __init__(self, printer, name=''):
 		store_attr()
 		self.gcsegs = []
 
 
 	def __repr__(self):
-		return f'<Step ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.state}'
+		return f'<Step ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.printer}'
 
 
 	def add(self, gcsegs):
@@ -604,7 +604,7 @@ class Step:
 		if exc_type is not None:
 			return False
 		#Otherwise store the current state
-		self.state = self.state.freeze()
+		self.printer = self.printer.freeze_state()
 
 
 	def plot_gcsegments(self, fig, gcsegs=None, style=None):
@@ -621,14 +621,15 @@ class Step:
 
 	def plot_thread(self, fig, start:Point, style=None):
 		#Plot a thread segment, starting at 'start', ending at the current anchor
-		if start == self.state.anchor:
+		if start == self.printer.anchor:
 			return
 		fig.add_trace(go.Scatter(
-			x=[start.x, self.state.anchor.x],
-			y=[start.y, self.state.anchor.y],
+			x=[start.x, self.printer.anchor.x],
+			y=[start.y, self.printer.anchor.y],
 			**self.style['thread'],
 		))
 		update_figure(fig, 'thread', style)
+
 
 
 class Steps:
@@ -638,7 +639,7 @@ class Steps:
 		'old_thread': {'line_color': 'blue'},
 		'old_layer':  {'line': dict(color='gray', dash='dot')},
 	}
-	def __init__(self, layer, state):
+	def __init__(self, layer, printer):
 		store_attr()
 		self.steps = []
 		self._current_step = None
@@ -654,20 +655,20 @@ class Steps:
 
 
 	def new_step(self, *messages):
-		self.steps.append(Step(self.state, ' '.join(map(str,messages))))
+		self.steps.append(Step(self.printer, ' '.join(map(str,messages))))
 		return self.current
 
 
 	def plot(self, prev_layer:TLayer=None):
 		steps = self.steps
-		last_anchor = steps[0].state.anchor
+		last_anchor = steps[0].printer.anchor
 
 		for stepnum,step in enumerate(steps):
 			print(f'Step {stepnum}: {step.name}')
 			fig = go.Figure()
 
 			#Plot the bed
-			step.state.bed.plot(fig)
+			step.printer.bed.plot(fig)
 
 			#Plot the outline of the previous layer, if provided
 			if prev_layer:
@@ -678,7 +679,7 @@ class Steps:
 				)
 
 			#Plot the thread from the bed anchor to the first step's anchor
-			steps[0].plot_thread(fig, steps[0].state.bed.anchor)
+			steps[0].plot_thread(fig, steps[0].printer.bed.anchor)
 
 			#Plot any geometry that was printed in the previous step
 			if stepnum > 0:
@@ -693,7 +694,7 @@ class Steps:
 				# anchor
 				if i > 0:
 					steps[i].plot_thread(fig,
-							steps[i-1].state.anchor,
+							steps[i-1].printer.anchor,
 							style={'thread': self.style['old_thread']},
 					)
 
@@ -701,28 +702,28 @@ class Steps:
 			step.plot_gcsegments(fig)
 
 			#Plot thread trajectory from current anchor to ring
-			step.state.plot_thread_to_ring(fig)
+			step.printer.plot_thread_to_ring(fig)
 
 			#Plot thread from last step's anchor to current anchor
 			step.plot_thread(fig, last_anchor)
-			last_anchor = step.state.anchor
+			last_anchor = step.printer.anchor
 
 			#Plot anchor/enter/exit points if any
-			if thread_seg := getattr(step.state, 'thread_seg', None):
-				step.state.plot_anchor(fig)
+			if thread_seg := getattr(step.printer, 'thread_seg', None):
+				step.printer.plot_anchor(fig)
 
 				if enter := getattr(thread_seg.start_point, 'in_out', None):
-					if enter.inside(step.state.layer.geometry.outline):
+					if enter.inside(step.printer.layer.geometry.outline):
 						fig.add_trace(go.Scatter(x=[enter.x], y=[enter.y], mode='markers',
 							marker=dict(color='yellow', symbol='x', size=8), name='enter'))
 
 				if exit := getattr(thread_seg.end_point, 'in_out', None):
-					if exit.inside(step.state.layer.geometry.outline):
+					if exit.inside(step.printer.layer.geometry.outline):
 						fig.add_trace(go.Scatter(x=[exit.x], y=[exit.y], mode='markers',
 							marker=dict(color='orange', symbol='x', size=8), name='exit'))
 
 			#Plot the ring
-			step.state.ring.plot(fig)
+			step.printer.ring.plot(fig)
 
 			#Show the figure for this step
 			fig.update_layout(template='plotly_dark',# autosize=False,
@@ -736,7 +737,7 @@ class Steps:
 class Threader:
 	def __init__(self, gcode):
 		store_attr()
-		self.state = State(Bed(), Ring())
+		self.printer = Printer(Bed(), Ring())
 
 
 	def route_model(self, thread):
@@ -755,8 +756,8 @@ class Threader:
 		for i, tseg in enumerate(thread_list):
 			print(f'\t{i}. {tseg}')
 
-		self.state.set_z(layer.z)
-		steps = Steps(layer=layer, state=self.state)
+		self.printer.set_z(layer.z)
+		steps = Steps(layer=layer, printer=self.printer)
 
 		#Get the thread segments to work on
 		thread = layer.flatten_thread(thread_list)
@@ -772,7 +773,7 @@ class Threader:
 			#TODO: in the case where lots of segments are non-intersecting, we need
 			# to do a multi-step procedure to move the thread, print, then move the
 			# thread over the printed ones and print again.
-			self.state.thread_avoid(layer.non_intersecting(thread + [traj]))
+			self.printer.thread_avoid(layer.non_intersecting(thread + [traj]))
 
 		with steps.new_step('Print non-intersecting layer segments') as s:
 			#TODO: this also needs to take into account the strand from the anchor to
@@ -786,12 +787,12 @@ class Threader:
 		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
 		for i,thread_seg in enumerate(thread):
 			anchors = layer.anchors(thread_seg)
-			self.state.layer = layer
-			self.state.thread_seg = thread_seg
+			self.printer.layer = layer
+			self.printer.thread_seg = thread_seg
 			with steps.new_step(f'Move thread ({thread_seg}) to overlap anchor at {anchors[0]}') as s:
-				self.state.thread_intersect(anchors[0])
+				self.printer.thread_intersect(anchors[0])
 
-			traj = self.state.thread().set_z(layer.z)
+			traj = self.printer.thread().set_z(layer.z)
 
 			msg = (f'Print segments not overlapping thread trajectory {traj}',
 						 f'and {len(thread[i:])} remaining thread segments')
@@ -809,7 +810,7 @@ class Threader:
 		remaining = [s for s in layer.geometry.segments if not s.printed]
 		if remaining:
 			with steps.new_step(f'Move thread {thread_seg} to avoid remaining geometry') as s:
-				self.state.thread_avoid(remaining)
+				self.printer.thread_avoid(remaining)
 
 			with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
 				s.add(remaining)
