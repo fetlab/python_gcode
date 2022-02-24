@@ -5,12 +5,13 @@ from math import radians, sin, cos, degrees
 from typing import List
 from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine, GCLine
 from fastcore.basics import basic_repr, store_attr
-from rich import print
 from math import atan2
 from parsers.cura4 import Cura4Layer
 from time import time
 from itertools import cycle
 
+from rich.console import Console
+print = Console(style="on #272727").print
 """
 Usage notes:
 	* The thread should be anchored on the bed such that it doesn't intersect the
