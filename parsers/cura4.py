@@ -58,8 +58,10 @@ def detect(lines):
 
 
 #Convention is that preamble "layer" is -1, first print layer is 0
-def parse(lines, layer_class=Layer, line_class=Line):
+def parse(gcobj):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
+	lines = gcobj.filelines
+	layer_class = gcobj.layer_class
 	glines = [Line(l, lineno=n+1) for n,l in enumerate(lines)]
 
 	#Extract the preamble and postamble
@@ -101,7 +103,6 @@ def parse(lines, layer_class=Layer, line_class=Line):
 			raise GCodeException(layer,
 					f"Couldn't find ';LAYER' comment in layer {i+1}") from e
 
-	#WARNING: not returning postamble!
 	postamble = layer_class(postamble, layernum='postamble')
 	preamble  = layer_class(preamble, layernum='preamble')
 	preamble.info = {}
@@ -110,4 +111,6 @@ def parse(lines, layer_class=Layer, line_class=Line):
 			key, val = line.line[1:].split(':', maxsplit=1)
 			preamble.info[key] = val
 
-	return preamble, layergroups
+	gcobj.preamble  = preamble
+	gcobj.layers    = layergroups
+	gcobj.postamble = postamble

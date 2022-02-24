@@ -2,10 +2,12 @@ import re, sys, warnings, math, os
 import parsers
 from enum import Enum
 from gclayer import Layer
+from gcline import Line
 
 
 class GcodeFile():
-	def __init__(self, filename=None, filestring='', layer_class=Layer):
+	def __init__(self, filename=None, filestring='', layer_class=Layer,
+			line_class=Line):
 		"""Parse a file's worth of gcode."""
 		self.preamble = None
 		self.layers   = []
@@ -16,6 +18,7 @@ class GcodeFile():
 			self.filestring = open(filename).read()
 		self.filelines = self.filestring.split('\n')
 		self.layer_class = layer_class
+		self.line_class  = line_class
 		self.parse()
 
 
@@ -61,7 +64,7 @@ class GcodeFile():
 			return
 
 		parser = parsers.find_parser(self.filelines)
-		self.preamble, self.layers = parser.parse(self.filelines, layer_class=self.layer_class)
+		parser.parse(self)
 
 
 def test():
