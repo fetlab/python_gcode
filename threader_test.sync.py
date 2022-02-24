@@ -18,7 +18,8 @@
 import gcode
 import numpy as np
 from Geometry3D import Point
-from danutil import unpickle
+#from danutil import unpickle
+import pickle
 from importlib import reload
 import plotly.graph_objects as go
 from IPython.core.display import display, HTML
@@ -38,21 +39,24 @@ def page_wide():
 		.prompt { min-width:0 !important; }
 		.run_this_cell { padding:0 !important; }
 		.modebar { padding-right: 250px !important; }
+		.jp-OutputArea-output { background-color: #272727 !important; }
 	</style>
 	"""))
 
 
 # %%
-import threader, geometry_helpers
+import threader, geometry_helpers, gcode
 from parsers import cura4
 reload(geometry_helpers)
 reload(threader)
 reload(cura4)
+reload(gcode)
 from threader import TLayer, Threader, GCodeException
 page_wide()
 
 # %%
-tpath = np.array(unpickle('/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle')) * 10
+thread_file = '/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle'
+tpath = np.array(pickle.load(open(thread_file, 'rb'))) * 10
 thread_transform = [131.164, 110.421, 0]
 tpath += [thread_transform, thread_transform]
 
@@ -141,3 +145,8 @@ Anchor at step 6 for seg 2 is (154.48, 114.49)
 TODO next: find out what's happening with segment 2 and its exit from the
 layer; why is there a step 6?
 """
+
+# %%
+from rich.console import Console
+blue_console = Console(style="on #272727")
+blue_console.print("I'm blue. Da ba dee da ba di. 123 {stuff}")
