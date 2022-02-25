@@ -497,7 +497,7 @@ class Printer:
 	def __init__(self, z=0):
 		self._x, self._y, self._z = 0, 0, 0
 		self.bed  = Bed()
-		self.ring = Ring(center=GPoint(110, 0, z))
+		self.ring = Ring(center=GPoint(110, 110, z))
 
 		self._anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
