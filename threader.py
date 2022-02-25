@@ -593,15 +593,19 @@ class Printer:
 	def thread_intersect(self, target, set_new_anchor=True, move_ring=True):
 		"""Rotate the ring so that the thread intersects the target Point. By default
 		sets the anchor to the intersection. Return the rotation value."""
+		anchor = self.anchor.as2d()
 		#Form a half line (basically a ray) from the anchor through the target
-		hl = HalfLine(self.anchor.as2d(), target.as2d())
-		if distance(self.anchor, self.ring.center) > self.ring.radius:
-			ring_point = intersection(hl, self.ring.geometry).end_point
-		else:
-			ring_point = intersection(hl, self.ring.geometry).start_point
+		hl = HalfLine(anchor, target.as2d())
+		print(f'HalfLine from {self.anchor} to {target}:\n', hl)
 
-		self.hl_parts = deepcopy([self.anchor, target])
-		self.ring_point = ring_point
+		isec = intersection(hl, self.ring.geometry)
+		if isec is None:
+			raise GCodeException(hl, "Anchor->target ray doesn't intersect ring")
+
+		#The intersection is always a Segment; we want the endpoint furthest from
+		# the anchor
+		ring_point = sorted(isec[:], key=lambda p: distance(anchor, p),
+				reverse=True)[0]
 
 		#Now we need the angle between center->ring and the x axis
 		ring_angle = atan2(ring_point.y - self.ring.center.y, ring_point.x - self.ring.center.x)
@@ -610,7 +614,6 @@ class Printer:
 			self.ring.set_angle(ring_angle)
 
 		if set_new_anchor:
-			print(f'new anchor: {target}')
 			self.anchor = target
 
 		return ring_angle
@@ -857,7 +860,7 @@ class Threader:
 			anchors = layer.anchors(thread_seg)
 			self.printer.layer = layer
 			self.printer.thread_seg = thread_seg
-			with steps.new_step(f'Move thread ({thread_seg}) to overlap anchor at {anchors[0]}') as s:
+			with steps.new_step(f'Move thread to overlap anchor at {anchors[0]}') as s:
 				self.printer.thread_intersect(anchors[0])
 
 			traj = self.printer.thread().set_z(layer.z)
@@ -871,13 +874,14 @@ class Threader:
 				print(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
 				s.add(layer.non_intersecting(thread[i:] + [traj]))
 
-			with steps.new_step('Print', len(layer.intersecting(thread_seg)),
-					'overlapping layers segments') as s:
-				s.add(layer.intersecting(thread_seg))
+			if len(layer.intersecting(thread_seg)) > 0:
+				with steps.new_step('Print', len(layer.intersecting(thread_seg)),
+						'overlapping layers segments') as s:
+					s.add(layer.intersecting(thread_seg))
 
 		remaining = [s for s in layer.geometry.segments if not s.printed]
 		if remaining:
-			with steps.new_step(f'Move thread {thread_seg} to avoid remaining geometry') as s:
+			with steps.new_step(f'Move thread to avoid remaining geometry') as s:
 				self.printer.thread_avoid(remaining)
 
 			with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:

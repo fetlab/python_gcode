@@ -74,8 +74,6 @@ stepsobj50.plot(g.layers[49])
 
 # %%
 stepsobj60 = t.route_layer(thread_geom, g.layers[60])
-
-# %%
 stepsobj60.plot()
 
 # %%
