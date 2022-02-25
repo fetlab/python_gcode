@@ -281,49 +281,6 @@ class TLayer(Cura4Layer):
 		self.model_isecs[tseg] = isecs
 
 
-	def intersect(self, thread: List[Segment]):
-		"""Call this in each of the intersection methods above to cache any
-		 intersections for each thread segment."""
-		self.add_geometry()
-
-		bot = self.geometry.planes.bottom
-		top = self.geometry.planes.top
-
-		for tseg in thread:
-			#Caching
-			if tseg in self._isecs:
-				continue
-			self._isecs[tseg] = isecs = {
-					'in_layer': False,                    # Is the thread in this layer at all?
-					'nsec_segs': [],                      # Non-intersecting gcode segments
-					'isec_segs': [],   'isec_points': [], # Intersecting gcode segments and locations
-					'enter':     None, 'exit': None,      # Thread segment entry and/or exit locations
-			}
-
-			enter = tseg.intersection(bot)
-			exit  = tseg.intersection(top)
-			isecs['enter'] = enter
-			isecs['exit']  = exit
-
-			start = time()
-			#And find the gCode lines the thread segment intersects with
-			for gcseg in self.geometry.segments:
-				gcseg.printed = False
-				inter = gcseg.intersection2d(tseg)
-				if inter:
-					isecs['isec_segs'  ].append(gcseg)
-					isecs['isec_points'].append(inter)
-				else:
-					isecs['nsec_segs'].append(gcseg)
-			print(f'Intersecting took {time()-start:2.4}s')
-
-			isecs['in_layer'] = any([
-				(enter and enter.inside(self.geometry.outline)),
-				(exit  and exit .inside(self.geometry.outline)),
-				tseg.start_point.inside(self.geometry.outline),
-				tseg.end_point  .inside(self.geometry.outline)] +
-				isecs['isec_segs'])
-
 
 class Ring:
 	"""A class representing the ring and thread carrier."""
@@ -340,7 +297,7 @@ class Ring:
 		self._angle        = angle
 		self.initial_angle = angle
 		self.center = center or GPoint(radius, 0, 0)
-		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=50)
+		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
 
 
 	def __repr__(self):
@@ -389,6 +346,7 @@ class Ring:
 		self.initial_angle = self._angle
 		self._angle = new_angle
 		self._direction = direction
+		#TODO: gcode generation
 
 
 	def carrier_location(self, offset=0):
@@ -418,9 +376,6 @@ class Ring:
 
 
 	def plot(self, fig, style=None):
-		# fig.add_trace(go.Scatter(
-		# 	**segs_xy(*list(self.geometry.segments()),
-		# 		name='ring', **self.style['ring'])))
 		fig.add_shape(
 			name='ring',
 			type='circle',
@@ -830,30 +785,6 @@ class Threader:
 		if not thread:
 			print('Thread not in layer at all')
 			return steps
-
-		"""
-		with steps.new_step('Move thread out of the way') as s:
-			#rotate ring to avoid segments it shouldn't intersect
-			#TODO: in the case where lots of segments are non-intersecting, we need
-			# to do a multi-step procedure to move the thread, print, then move the
-			# thread over the printed ones and print again.
-			self.printer.thread_avoid(layer.non_intersecting(thread + [traj]))
-
-		with steps.new_step('Print non-intersecting layer segments') as s:
-			#TODO: this also needs to take into account the strand from the anchor to
-			# the ring, if we can't completely avoid printed geometry
-			s.add(layer.non_intersecting(thread))
-		"""
-
-		# with steps.new_step('Set thread location') as s:
-		# 	pass
-
-		#TODO: we might need to execute lines of gcode until we get to the first
-		# extrusion line, so that the first thread anchor is not outside of the
-		# ring! ... but that might be counterproductive if we want to avoid
-		# unnecessary movements since the first thing we print might not actually
-		# be the first line of gcode? Possibly then use the layer extents to figure
-		# this out.
 
 		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
 		for i,thread_seg in enumerate(thread):
