@@ -4,10 +4,9 @@ from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, dist
 from math import radians, sin, cos, degrees
 from typing import List
 from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine, GCLine
-from fastcore.basics import basic_repr, store_attr
+from fastcore.basics import store_attr
 from math import atan2
 from parsers.cura4 import Cura4Layer
-from time import time
 from itertools import cycle
 
 from rich.console import Console
@@ -33,6 +32,43 @@ Usage notes:
 	* [X] Order isecs['isec_points'] in the Layer.anchors() method
 	* [ ] gcode -> move to start point of a Segment after a print order change
 """
+
+#https://stackoverflow.com/a/31174427/49663
+import functools
+def rgetattr(obj, attr, *args):
+	def _getattr(obj, attr):
+		return getattr(obj, attr, *args)
+	return functools.reduce(_getattr, [obj] + attr.split('.'))
+def rsetattr(obj, attr, val):
+	pre, _, post = attr.rpartition('.')
+	return setattr(rgetattr(obj, pre) if pre else obj, post, val)
+
+#Modified from https://stackoverflow.com/a/2123602/49663
+def attrhelper(attr, after=None):
+	"""Generate functions which get and set the given attr. If the parent object
+	has a '.attr_changed' function or if after is defined, and the attr changes,
+	call that function with arguments (attr, old_value, new_value):
+
+		class Foo:
+			a = property(**attrsetter('_a'))
+			b = property(**attrsetter('_b'))
+			def attr_changed(self, attr, old_value, new_value):
+				print(f'{attr} changed from {old_value} to {new_value}')
+
+	Uses rgetattr and rsetattr to work with nested values like '_a.x'.
+	"""
+	def set_any(self, value):
+		old_value = rgetattr(self, attr)
+		rsetattr(self, attr, value)
+		if value != old_value:
+			f = getattr(self, 'attr_changed', after) or (lambda a,b,c: 0)
+			f(attr, old_value, value)
+
+	def get_any(self):
+		return rgetattr(self, attr)
+
+	return {'fget': get_any, 'fset': set_any}
+
 
 
 def update_figure(fig, name, style, what='traces'):
@@ -138,19 +174,32 @@ class TLayer(Cura4Layer):
 			return
 		self.geometry = Geometry(segments=[], planes=None, outline=[])
 
+		#Iterate through all GCLines and turn pairs of moves into GSegments with
+		# the first coordinate in .gc_line1 and the second in .gc_line2. If there
+		# are non-move lines at the start of the layer, put them into the layer's
+		# .preamble. If there are non-move lines in between moves, put them in
+		# GSegment.gc_extra .
 		last = None
+		seg = None
+		extra = []
 		for line in self.lines:
 			if last is not None:   #wait until we have two moves in the layer
 				if line.is_xymove():
 					seg = GSegment(last, line, z=self.z)
+					seg.gc_extra.extend(extra)
+					extra = []
 					try:
 						line.segment = seg
 						self.geometry.segments.append(seg)
 					except (AttributeError, TypeError) as e:
 						raise GCodeException((self,last),
 								f'GSegment {line.lineno}: {line}') from e
+				else: #non-move line following a move line
+					extra.append(line)
 			if line.is_xymove():
 				last = line
+			else:
+				self.preamble.append(line)
 
 		(min_x, min_y), (max_x, max_y) = self.extents()
 		mid_x = min_x + .5 * (max_x - min_x)
@@ -290,18 +339,25 @@ class Ring:
 		'indicator': {'line': dict(color='blue',  width= 4)},
 	}
 
-	__repr__ = basic_repr('_radius,_angle,center')
-
 	def __init__(self, radius=110, angle=0, center:GPoint=None):
 		self.radius        = radius
 		self._angle        = angle
 		self.initial_angle = angle
-		self.center = center or GPoint(radius, 0, 0)
+		self.center        = center or GPoint(radius, 0, 0)
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
+
+
+	x = property(**attrhelper('center.x'))
+	y = property(**attrhelper('center.y'))
+	z = property(**attrhelper('center.z'))
 
 
 	def __repr__(self):
 		return f'Ring({degrees(self._angle):.2f}°)'
+
+
+	def changed(self, attr, old_value, new_value):
+		print(f'Ring.{attr} changed from {old_value} to {new_value}')
 
 
 	@property
@@ -319,37 +375,16 @@ class Ring:
 		return self.angle2point(self.angle)
 
 
-	@property
-	def x(self): return self.center.x
-
-	@x.setter
-	def x(self, new_x): self.center.x = new_x
-
-
-	@property
-	def y(self): return self.center.y
-
-	@y.setter
-	def y(self, new_y): self.center.y = new_y
-
-
-	@property
-	def z(self): return self.center.z
-
-	@z.setter
-	def z(self, new_z): self.center.z = new_z
-
-
 	def set_angle(self, new_angle:radians, direction=None):
 		"""Set a new angle for the ring. Optionally provide a preferred movement
 		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
 		self.initial_angle = self._angle
 		self._angle = new_angle
 		self._direction = direction
-		#TODO: gcode generation
 
 
 	def carrier_location(self, offset=0):
+		"""Used in plotting."""
 		return GPoint(
 			self.center.x + cos(self.angle)*(self.radius+offset),
 			self.center.y + sin(self.angle)*(self.radius+offset),
@@ -372,7 +407,14 @@ class Ring:
 	def gcode(self):
 		"""Return the gcode necessary to move the ring from its starting angle
 		to its requested one."""
-		pass
+		#Were there any changes in angle?
+		if self.angle == self.initial_angle:
+			return
+		#TODO: generate movement code here; by default move the minimum angle
+		gc = GCLine(comment=
+			f'----- Ring move from {degrees(self.initial_angle)} to {degrees(self.angle)}')
+		self._angle = self.initial_angle
+		return gc
 
 
 	def plot(self, fig, style=None):
@@ -457,6 +499,11 @@ class Printer:
 		self._anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
 
+	x = property(**attrhelper('_x'))
+	y = property(**attrhelper('_y'))
+	z = property(**attrhelper('_z'))
+
+
 	def __repr__(self):
 		return f'Printer({self.bed}, {self.ring})'
 
@@ -471,35 +518,32 @@ class Printer:
 		self._anchor = new_anchor
 
 
-	@property
-	def x(self): return self._x
-
-	@x.setter
-	def x(self, new_x):
-		self._x = new_x
-
-
-	@property
-	def y(self): return self._y
-
-	@y.setter
-	def y(self, new_y):
-		self._y     = new_y
-		self.ring.y = new_y   #Offset the ring coordinate system relative to the bed
-
-
-	@property
-	def z(self): return self._z
-
-	@z.setter
-	def z(self, new_z):
-		self._z = new_z
-		self.ring.z = new_z
+	def changed(self, attr, old_value, new_value):
+		print(f'Printer.{attr} changed from {old_value} to {new_value}')
+		setattr(self.ring, attr[1])
+		if attr[1] in 'xy':
+			#Move the ring to keep the thread intersecting the anchor
+			self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
 
 
 	def freeze_state(self):
 		"""Return a copy of this Printer object, capturing the state."""
 		return deepcopy(self)
+
+
+	def gcode(self, lines):
+		"""Return gcode. lines is a list of GCLines involved in the current step.
+		Use them to generate gcode for the ring to maintain the thread
+		trajectory."""
+		gc = []
+		gc.append(self.ring.gcode())
+
+		for line in lines:
+			self.execute_gcode(line)
+			gc.append()
+
+		#filter gc to drop None values
+		return filter(None, gc)
 
 
 	def execute_gcode(self, gcline:GCLine):
@@ -602,6 +646,19 @@ class Step:
 
 	def __repr__(self):
 		return f'<Step ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.printer}'
+
+
+	def gcode(self):
+		"""Render the gcode involved in this Step, returning a list of GCLines:
+			* Sort added gcode lines by line number. If there are breaks in line
+				number, check whether the represented head position also has a break.
+				If so, add gcode to move the head correctly.
+			* Whenever there is a movement, we need to check with the Printer object
+				whether we should move the ring to keep the thread at the correct angle.
+
+		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
+		and .gc_line2 member which are GCLines.
+		"""
 
 
 	def add(self, gcsegs):
@@ -784,6 +841,8 @@ class Threader:
 
 		if not thread:
 			print('Thread not in layer at all')
+			with steps.new_step('Thread not in layer') as s:
+				s.add(layer.lines)
 			return steps
 
 		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
@@ -799,8 +858,6 @@ class Threader:
 			msg = (f'Print segments not overlapping thread trajectory {traj}',
 						 f'and {len(thread[i:])} remaining thread segments')
 			with steps.new_step(*msg) as s:
-				#BUG: intersect_model sets all segments' .printed = False, then we end
-				# up re-printing
 				layer.intersect_model(traj)
 				print(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
 				s.add(layer.non_intersecting(thread[i:] + [traj]))
@@ -812,7 +869,7 @@ class Threader:
 
 		remaining = [s for s in layer.geometry.segments if not s.printed]
 		if remaining:
-			with steps.new_step(f'Move thread to avoid remaining geometry') as s:
+			with steps.new_step('Move thread to avoid remaining geometry') as s:
 				self.printer.thread_avoid(remaining)
 
 			with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
@@ -844,8 +901,7 @@ if __name__ == "__main__":
 	thread_transform = [131.164, 110.421, 0]
 	tpath += [thread_transform, thread_transform]
 	thread_geom = tuple([Segment(Point(*s), Point(*e)) for s,e in tpath])
-	g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
-			layer_class=TLayer)
+	g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
 	t = Threader(g)
 	steps = t.route_layer(thread_geom, g.layers[3])
 	#print(steps)
