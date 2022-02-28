@@ -67,7 +67,7 @@ class Line():
 
 	def is_xyextrude(self):
 		"""Return True if it's an extruding move in the X/Y plane, else False."""
-		return self.code in ('G0', 'G1') and ('X' in self.args or 'Y' in self.args) and 'E' in self.args
+		return self.is_xymove() and 'E' in self.args
 
 
 	def construct(self):
