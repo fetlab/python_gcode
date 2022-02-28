@@ -156,6 +156,7 @@ class GSegment(Geometry3D.Segment):
 		#Save lines of gcode that make this segment, if any
 		self.gc_line1 = None
 		self.gc_line2 = None
+		self.gc_extra = []
 
 		if isinstance(a, Point):
 			point1 = a
@@ -178,6 +179,13 @@ class GSegment(Geometry3D.Segment):
 		self.line = Geometry3D.Line(point1, point2)
 		self.start_point = point1
 		self.end_point = point2
+
+
+	def __repr__(self):
+		if not(self.gc_line1 and self.gc_line2):
+			return super().__repr__()
+		return "<{}:{}↔︎{}:{}>".format(self.gc_line1.lineno, self.start_point,
+				self.gc_line2.lineno, self.end_point)
 
 
 	def intersection2d(self, other):
