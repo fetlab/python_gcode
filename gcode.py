@@ -1,13 +1,12 @@
-import re, sys, warnings, math, os
+import sys, warnings
 import parsers
-from enum import Enum
 from gclayer import Layer
 from gcline import Line
 
 
-class GcodeFile():
+class GcodeFile:
 	def __init__(self, filename=None, filestring='', layer_class=Layer,
-			line_class=Line):
+			line_class=Line, parser=None):
 		"""Parse a file's worth of gcode."""
 		self.preamble = None
 		self.layers   = []
@@ -19,7 +18,7 @@ class GcodeFile():
 		self.filelines = self.filestring.split('\n')
 		self.layer_class = layer_class
 		self.line_class  = line_class
-		self.parse()
+		self.parse(parser)
 
 
 	def __repr__(self):
@@ -56,14 +55,14 @@ class GcodeFile():
 			layer.multiply(**kwargs)
 
 
-	def parse(self):
+	def parse(self, parser):
 		"""Parse the gcode. Split it into chunks of lines at Z changes,
 		assuming that denotes layers. The Layer object does the actual
 		parsing of the code."""
 		if not self.filelines:
 			return
 
-		parser = parsers.find_parser(self.filelines)
+		parser = parser or parsers.find_parser(self.filelines)
 		parser.parse(self)
 
 

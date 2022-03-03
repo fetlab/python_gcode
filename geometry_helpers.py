@@ -49,6 +49,66 @@ def seg_combine(segs):
 	return r
 
 
+"""
+Find first xyextrude. If a xymove came before it, then the move->extrude is the
+first segment and all lines between are extra, and all lines before the move
+are preamble. If no move came before the extrude, that's a problem because we
+don't know where we are.
+
+In this case - ???
+1. G1 F3000 X139.372 Y123.966 E265.63054
+2. G1 F2700 E260.63054 -> retraction
+3. G0 F9000 X182.938 Y124.189
+4. G1 F2700 E265.63054
+5. G1 F3000 X183.411 Y122.426 E265.69125
+
+1 is an end point, 2-5 is a group
+
+So we need a preamble to each Segment as well... maybe a Segment should just
+have a list of associated GCLines in order?
+"""
+"""
+Turn GCLines into GSegments. We use the following rules:
+  1. There must be a X/Y move (not extrude) before any X/Y extrudes.
+  2. A GSegment represents a movement
+"""
+def gcode2segments(lines:[GCLine], z):
+	last     = None
+	extra    = []
+	preamble = []
+	segments = []
+
+	#Put all beginning non-extrusion lines into preamble
+	while lines and not lines[0].is_xyextrude():
+		preamble.append(lines.pop(0))
+
+	#Now takes lines from the preamable and put them in extra until we find an
+	# xymove
+	preamble.reverse()
+	while preamble and not preamble[0].is_xymove():
+		extra.append(preamble.pop(0))
+
+	#Put that xymove as the "last" item and re-reverse extra and preamble
+	last = preamble.pop(0)
+	extra.reverse()
+	preamble.reverse()
+
+	for line in lines:
+		print(line, end='')
+		if line.is_xyextrude():
+			print(' is xyextrude')
+			seg = GSegment(last, line, z=z)
+			seg.gc_extra.extend(extra)
+			extra = []
+			line.segment = seg
+			segments.append(seg)
+		else: #non-move line following a move line
+			extra.append(line)
+		if line.is_xymove():
+			last = line
+
+	return preamble, segments, extra
+
 #Monkey-patch Point
 @patch
 def __repr__(self:Point):
@@ -206,18 +266,3 @@ class GSegment(Geometry3D.Segment):
 		self.end_point.z = z
 		self.line = Geometry3D.Line(self.start_point, self.end_point)
 		return self
-
-
-"""
-def unitwrapper(obj):
-	@wraps(obj)
-	def wrapper(*args, **kwargs):
-		print(f'Doing {obj.__name__}!')
-		return obj(*args, **kwargs)
-	return wrapper
-
-length = ureg.get_dimensionality('[length]')
-angle  = 0*ureg.degrees
-# class Point(Geometry3D.Point):
-# 	__init__ = check(
-"""

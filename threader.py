@@ -174,17 +174,24 @@ class TLayer(Cura4Layer):
 			return
 		self.geometry = Geometry(segments=[], planes=None, outline=[])
 
-		#Iterate through all GCLines and turn pairs of moves into GSegments with
-		# the first coordinate in .gc_line1 and the second in .gc_line2. If there
-		# are non-move lines at the start of the layer, put them into the layer's
-		# .preamble. If there are non-move lines in between moves, put them in
-		# GSegment.gc_extra .
+		#Iterate through all GCLines and turn pairs of extrusion moves into
+		# GSegments with the first coordinate in .gc_line1 and the second in
+		# .gc_line2. If there are non-extrusion move lines at the start of the
+		# layer, put them into the layer's .preamble. If there are non-move lines
+		# in between moves, put them in GSegment.gc_extra.
+		"""
+		Some cases, where G0 is travel and G1 is extrude:
+
+			G1a, G1b, G1c -> {G1a, G1b}, {G1b, G1c}
+			G1a, G0, G1b  ->  ...G1a}, {G0, G1b}
+			G1a, G0a, G0b, G1a ->
+		"""
 		last = None
 		seg = None
 		extra = []
 		for line in self.lines:
 			if last is not None:   #wait until we have two moves in the layer
-				if line.is_xymove():
+				if line.is_xyextrude():
 					seg = GSegment(last, line, z=self.z)
 					seg.gc_extra.extend(extra)
 					extra = []
