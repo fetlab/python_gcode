@@ -3,7 +3,8 @@ from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance
 from math import radians, sin, cos, degrees
 from typing import List
-from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine, GCLine
+from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine,
+														 segs_xy, seg_combine, GCLine, gcode2segments
 from fastcore.basics import store_attr
 from math import atan2
 from parsers.cura4 import Cura4Layer
@@ -108,6 +109,8 @@ class TLayer(Cura4Layer):
 		self.layer_height = layer_height
 		self.model_isecs  = {}
 		self.in_out       = []
+		self.preamble     = []
+		self.postamble    = []
 
 
 	def plot(self, fig,
@@ -172,55 +175,28 @@ class TLayer(Cura4Layer):
 		"""
 		if self.geometry or not self.has_moves:
 			return
+
 		self.geometry = Geometry(segments=[], planes=None, outline=[])
 
-		#Iterate through all GCLines and turn pairs of extrusion moves into
-		# GSegments with the first coordinate in .gc_line1 and the second in
-		# .gc_line2. If there are non-extrusion move lines at the start of the
-		# layer, put them into the layer's .preamble. If there are non-move lines
-		# in between moves, put them in GSegment.gc_extra.
-		"""
-		Some cases, where G0 is travel and G1 is extrude:
+		#Make segments from GCLines
+		self.preamble, self.geometry.segments, self.postamble = gcode2segments(self.lines)
 
-			G1a, G1b, G1c -> {G1a, G1b}, {G1b, G1c}
-			G1a, G0, G1b  ->  ...G1a}, {G0, G1b}
-			G1a, G0a, G0b, G1a ->
-		"""
-		last = None
-		seg = None
-		extra = []
-		for line in self.lines:
-			if last is not None:   #wait until we have two moves in the layer
-				if line.is_xyextrude():
-					seg = GSegment(last, line, z=self.z)
-					seg.gc_extra.extend(extra)
-					extra = []
-					try:
-						line.segment = seg
-						self.geometry.segments.append(seg)
-					except (AttributeError, TypeError) as e:
-						raise GCodeException((self,last),
-								f'GSegment {line.lineno}: {line}') from e
-				else: #non-move line following a move line
-					extra.append(line)
-			if line.is_xymove():
-				last = line
-			else:
-				self.preamble.append(line)
-
+		#Construct top/bottom planes for intersections
 		(min_x, min_y), (max_x, max_y) = self.extents()
 		mid_x = min_x + .5 * (max_x - min_x)
 		z = self.z
 
 		plane_points = [(min_x, min_y), (mid_x, max_y), (max_x, max_y)]
-		bot_z = z - self.layer_height/2
-		top_z = z + self.layer_height/2
-		bottom = Plane(*[Point(p[0], p[1], bot_z) for p in plane_points])
-		top    = Plane(*[Point(p[0], p[1], top_z) for p in plane_points])
-		bottom.z = bot_z
-		top.z    = top_z
+		bot_z        = z - self.layer_height/2
+		top_z        = z + self.layer_height/2
+		bottom       = Plane(*[Point(p[0], p[1], bot_z) for p in plane_points])
+		top          = Plane(*[Point(p[0], p[1], top_z) for p in plane_points])
+		bottom.z     = bot_z
+		top.z        = top_z
+
 		self.geometry.planes = Planes(bottom=bottom, top=top)
 
+		#Find the outline by using Cura comments for "wall-outer"
 		for part, lines in self.parts.items():
 			if 'type:wall-outer' in (lines[0].comment or '').lower():
 				self.geometry.outline.extend(
