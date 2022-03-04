@@ -300,6 +300,7 @@ class TLayer(Cura4Layer):
 		}
 
 		for gcseg in self.geometry.segments:
+			if not gcseg.is_extrude: continue
 			if not hasattr(gcseg, 'printed'):
 				gcseg.printed = False
 			inter = gcseg.intersection(tseg)
@@ -849,7 +850,7 @@ class Threader:
 						'overlapping layers segments') as s:
 					s.add(layer.intersecting(thread_seg))
 
-		remaining = [s for s in layer.geometry.segments if not s.printed]
+		remaining = [s for s in layer.geometry.segments if s.is_extrude and not s.printed]
 		if remaining:
 			with steps.new_step('Move thread to avoid remaining geometry') as s:
 				self.printer.thread_avoid(remaining)
@@ -858,7 +859,7 @@ class Threader:
 				s.add(remaining)
 
 		print('[yellow]Done with thread for this layer[/];',
-				len([s for s in layer.geometry.segments if not s.printed]),
+				len([s for s in layer.geometry.segments if s.is_extrude and not s.printed]),
 				'gcode lines left')
 
 		return steps
