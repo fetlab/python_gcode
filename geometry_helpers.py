@@ -189,6 +189,8 @@ class GSegment(Geometry3D.Segment):
 		#Label whether this is an extrusion move or not
 		self.is_extrude = is_extrude
 
+		self.printed = False
+
 		#Save the movement lines of gcode
 		self.gc_line1 = None
 		self.gc_line2 = None
