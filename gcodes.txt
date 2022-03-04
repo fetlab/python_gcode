@@ -8,6 +8,7 @@ G91     Relative Positioning (relative to last position)
 G92     Set software position to value (no motion)
 M0      Stops everything after buffer is empty
 M104    Set extruder temperature (not waiting)
+M105    Get a temperature report
 M106    Set Fan Speed to S and start
 M107    Turn Fan off (or use M106 S0)
 M109    Set extruder temperature (waits till reached) 
@@ -17,6 +18,10 @@ M140    Set heated bed temperature to S (not waiting)
 M17     Enable all stepper motors
 M190    Set heated bed temperature to S (waits till reached)
 M204    Set default acceleration
+M205		X/Y/Z/E: Set max jerk
+				B:       Set min segment time (µs)
+				S/T:     Set min feedrate for print (S)/travel (T) moves
+				J:       Set junction deviation
 M400    Wait for current moves to finish
 M82     Set extruder to absolute mode
 M83     Set extruder to relative mode
