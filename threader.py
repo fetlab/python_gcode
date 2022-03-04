@@ -3,8 +3,7 @@ from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance
 from math import radians, sin, cos, degrees
 from typing import List
-from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine,
-														 segs_xy, seg_combine, GCLine, gcode2segments
+from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine, GCLine, gcode2segments
 from fastcore.basics import store_attr
 from math import atan2
 from parsers.cura4 import Cura4Layer
@@ -179,7 +178,7 @@ class TLayer(Cura4Layer):
 		self.geometry = Geometry(segments=[], planes=None, outline=[])
 
 		#Make segments from GCLines
-		self.preamble, self.geometry.segments, self.postamble = gcode2segments(self.lines)
+		self.preamble, self.geometry.segments, self.postamble = gcode2segments(self.lines, self.z)
 
 		#Construct top/bottom planes for intersections
 		(min_x, min_y), (max_x, max_y) = self.extents()
