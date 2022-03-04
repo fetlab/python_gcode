@@ -60,9 +60,9 @@ def detect(lines):
 #Convention is that preamble "layer" is -1, first print layer is 0
 def parse(gcobj):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
-	lines = gcobj.filelines
 	layer_class = gcobj.layer_class
-	glines = [Line(l, lineno=n+1) for n,l in enumerate(lines)]
+	glines = [Line(l, lineno=n+1) for n,l in enumerate(gcobj.filelines)]
+	gcobj.lines = glines.copy()
 
 	#Extract the preamble and postamble
 	preamble, glines = listsplit(glines, lambda l: l.line.startswith(';LAYER:0'),
