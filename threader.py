@@ -8,6 +8,7 @@ from fastcore.basics import store_attr
 from math import atan2
 from parsers.cura4 import Cura4Layer
 from itertools import cycle
+from operator import attrgetter
 
 from rich.console import Console
 print = Console(style="on #272727").print
@@ -644,12 +645,20 @@ class Step:
 		"""
 
 
-	def add(self, gcsegs):
+	def add(self, layer:TLayer, gcsegs:List[GSegment]):
 		print(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs')
 		for seg in gcsegs:
 			if not seg.printed:
 				self.gcsegs.append(seg)
 				seg.printed = True
+
+		#Now find all of the lines from the layer that are in between the lines we
+		# just added, and add them as well
+		for seg in set(layer.geometry.segments) - set(sum([seg.gc_lines for seg in self.gcsegs], [])):
+			if not seg.printed:
+				self.gcsegs.append(seg)
+				seg.printed = True
+
 
 
 	def __enter__(self):
@@ -843,23 +852,23 @@ class Threader:
 			with steps.new_step(*msg) as s:
 				layer.intersect_model(traj)
 				print(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
-				s.add(layer.non_intersecting(thread[i:] + [traj]))
+				s.add(layer, layer.non_intersecting(thread[i:] + [traj]))
 
 			if len(layer.intersecting(thread_seg)) > 0:
 				with steps.new_step('Print', len(layer.intersecting(thread_seg)),
 						'overlapping layers segments') as s:
-					s.add(layer.intersecting(thread_seg))
+					s.add(layer, layer.intersecting(thread_seg))
 
-		remaining = [s for s in layer.geometry.segments if s.is_extrude and not s.printed]
+		remaining = [s for s in layer.geometry.segments if not s.printed]
 		if remaining:
 			with steps.new_step('Move thread to avoid remaining geometry') as s:
 				self.printer.thread_avoid(remaining)
 
 			with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
-				s.add(remaining)
+				s.add(layer, remaining)
 
 		print('[yellow]Done with thread for this layer[/];',
-				len([s for s in layer.geometry.segments if s.is_extrude and not s.printed]),
+				len([s for s in layer.geometry.segments if not s.printed]),
 				'gcode lines left')
 
 		return steps
