@@ -56,6 +56,7 @@ def gcode2segments(lines:List[GCLine], z):
 	point only, and the second line denotes the action (e.g. extrude) *and* the end
 	point. Mark extrusion GSegments. Return preamble, segments, postamble.
 	"""
+	lines    = lines.copy()
 	last     = None
 	extra    = []
 	preamble = []
