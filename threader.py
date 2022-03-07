@@ -17,6 +17,11 @@ Usage notes:
 		model on the way to its first model-anchor point.
 """
 
+###########
+# TO DO NEXT:
+# Account for skipped line numbers in TLayer.gcode()
+##########
+
 """TODO:
 	* [X] layer.intersect(thread)
 	* [ ] gcode generator for ring
