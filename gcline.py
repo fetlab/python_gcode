@@ -1,5 +1,7 @@
 import re, sys
+from functools import total_ordering
 
+@total_ordering
 class Line():
 	def __init__(self, line='', lineno='', code=None, args={}, comment=None):
 		"""Parse a single line of gcode into its code and named
@@ -53,6 +55,14 @@ class Line():
 
 	def __hash__(self):
 		return hash(f'{self.lineno} {self.line}')
+
+
+	def __eq__(self, other):
+		return hash(self) == hash(other)
+
+
+	def __lt__(self, other):
+		return self.lineno < other.lineno
 
 
 	def __repr__(self):
