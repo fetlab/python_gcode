@@ -69,7 +69,7 @@ stepsobj49 = t.route_layer(thread_geom, g.layers[49])
 stepsobj49.plot()
 
 # %%
-sorted(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_line1.lineno)[2].gc_extra
+sorted(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_line1.lineno)[2].gc_lines
 
 # %%
 stepsobj50 = t.route_layer(thread_geom, g.layers[50])

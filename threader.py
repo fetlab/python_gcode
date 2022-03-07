@@ -8,7 +8,6 @@ from fastcore.basics import store_attr
 from math import atan2
 from parsers.cura4 import Cura4Layer
 from itertools import cycle
-from operator import attrgetter
 
 from rich.console import Console
 print = Console(style="on #272727").print
@@ -643,6 +642,8 @@ class Step:
 		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
 		and .gc_line2 member which are GCLines.
 		"""
+		#Collect all of the gc_lines from the GSegments that were add()'ed
+		gc_lines = sorted(sum([seg.gc_lines for seg in self.gcsegs], []))
 
 
 	def add(self, layer:TLayer, gcsegs:List[GSegment]):
@@ -651,14 +652,6 @@ class Step:
 			if not seg.printed:
 				self.gcsegs.append(seg)
 				seg.printed = True
-
-		#Now find all of the lines from the layer that are in between the lines we
-		# just added, and add them as well
-		for seg in set(layer.geometry.segments) - set(sum([seg.gc_lines for seg in self.gcsegs], [])):
-			if not seg.printed:
-				self.gcsegs.append(seg)
-				seg.printed = True
-
 
 
 	def __enter__(self):
@@ -848,7 +841,7 @@ class Threader:
 			traj = self.printer.thread().set_z(layer.z)
 
 			msg = (f'Print segments not overlapping thread trajectory {traj}',
-						 f'and {len(thread[i:])} remaining thread segments')
+						 f'or {len(thread[i:])} remaining thread segments')
 			with steps.new_step(*msg) as s:
 				layer.intersect_model(traj)
 				print(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
