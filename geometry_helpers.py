@@ -1,5 +1,4 @@
 import Geometry3D
-from operator import attrgetter
 from typing import List
 from Geometry3D import Vector, Point, Segment, intersection
 from gcline import Line as GCLine
@@ -51,10 +50,14 @@ def seg_combine(segs):
 	return r
 
 
-def gcode2segments(lines:List[GCLine], z):
+def gcode2segments(lines:List[GCLine], z, keep_moves_with_extrusions=True):
 	"""Turn GCLines into GSegments. Keep in mind that the first line denotes the start
 	point only, and the second line denotes the action (e.g. extrude) *and* the end
 	point. Mark extrusion GSegments. Return preamble, segments, postamble.
+
+	Set keep_moves_with_extrusions to False to make pairs of non-extruding
+	movements into independent GSegments; otherwise, sequences of non-extrusion
+	moves preceding an extrusion move will be grouped into the extrusion move.
 	"""
 	lines    = lines.copy()
 	last     = None
@@ -69,16 +72,34 @@ def gcode2segments(lines:List[GCLine], z):
 	#Put the first xymove as the "last" item
 	last = lines.pop(0)
 
-	#Now take pairs of xymove lines, accumulating intervening non-move lines in
-	# extra
-	for line in lines:
-		if line.is_xymove():
-			line.segment = GSegment(last, line, z=z, gc_lines=extra, is_extrude=line.is_xyextrude())
-			segments.append(line.segment)
-			last  = line
-			extra = []
-		else: #non-move line following a move line
-			extra.append(line)
+	if keep_moves_with_extrusions:
+		for line in lines:
+			if line.is_xyextrude():
+				line.segment = GSegment(last, line, z=z, gc_lines=extra, is_extrude=line.is_xyextrude())
+				segments.append(line.segment)
+				last = line
+				extra = []
+			elif line.is_xymove():
+				if not last.is_xyextrude():
+					extra.append(last)
+				last = line
+			else:
+				extra.append(line)
+		if not last.is_xyextrude() and last not in extra:
+			extra.append(last)
+			extra.sort()
+
+	else:
+		#Now take pairs of xymove lines, accumulating intervening non-move lines in
+		# extra
+		for line in lines:
+			if line.is_xymove():
+				line.segment = GSegment(last, line, z=z, gc_lines=extra, is_extrude=line.is_xyextrude())
+				segments.append(line.segment)
+				last  = line
+				extra = []
+			else: #non-move line following a move line
+				extra.append(line)
 
 	return preamble, segments, extra
 
@@ -223,7 +244,7 @@ class GSegment(Geometry3D.Segment):
 		self.end_point   = point2
 
 		#Sort any gcode lines by line number
-		self.gc_lines.sort(key=attrgetter('lineno'))
+		self.gc_lines.sort()
 
 
 	def __repr__(self):
