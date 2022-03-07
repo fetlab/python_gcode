@@ -51,10 +51,6 @@ if __name__ == "__main__":
 	g = GcodeFile(filestring=test_lines, layer_class=TLayer)
 	p,s,e = gcode2segments(g.layers[0].lines, z=10)
 
-	lno = sum((
-			[l.lineno for l in p], [s[0].gc_lines[0].lineno],
-			[l.lineno for seg in s for l in seg.gc_lines[1:]],
-			[l.lineno for l in e],
-			), [])
+	lines = p + [s[0].gc_lines[0]] + sum([seg.gc_lines for seg in s], []) + e
 
-	assert([l.lineno for l in g.lines] == lno)
+	print('Lines missing:', set(g.lines).difference(lines))
