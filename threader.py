@@ -1,6 +1,6 @@
-import plotly, plotly.graph_objects as go
+import plotly.graph_objects as go
 from copy import deepcopy
-from Geometry3D import Circle, Vector, Segment, Point, Plane, intersection, distance
+from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
 from math import radians, sin, cos, degrees
 from typing import List
 from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine, GCLine, gcode2segments
@@ -8,6 +8,8 @@ from fastcore.basics import store_attr
 from math import atan2
 from parsers.cura4 import Cura4Layer
 from itertools import cycle
+from tlayer import TLayer
+from gcline import GCLines
 
 from rich.console import Console
 print = Console(style="on #272727").print
@@ -102,220 +104,6 @@ class GCodeException(Exception):
 	def __init__(self, obj, message):
 		self.obj = obj
 		self.message = message
-
-
-
-class TLayer(Cura4Layer):
-	"""A gcode layer that has thread in it."""
-	def __init__(self, *args, layer_height=0.4, **kwargs):
-		super().__init__(*args, **kwargs)
-		self.geometry     = None
-		self.layer_height = layer_height
-		self.model_isecs  = {}
-		self.in_out       = []
-		self.preamble     = []
-		self.postamble    = []
-
-
-	def plot(self, fig,
-			move_colors:List=plotly.colors.qualitative.Set2,
-			extrude_colors:List=plotly.colors.qualitative.Dark2,
-			plot3d=False, only_outline=True):
-		"""Plot the geometry making up this layer. Set only_outline to True to
-		print only the outline of the gcode in the layer .
-		"""
-		self.add_geometry()
-		colors = cycle(zip(extrude_colors, move_colors))
-
-		for gcline, part in self.parts.items():
-			if only_outline and 'wall-outer' not in gcline.line.lower():
-				continue
-			colorD, colorL = next(colors)
-
-			Esegs = {'x': [], 'y': [], 'z': []}
-			Msegs = {'x': [], 'y': [], 'z': []}
-			for line in part:
-				try:
-					seg = line.segment
-				except AttributeError:
-					#print(line)
-					continue
-
-				segs = Esegs if line.is_xyextrude() else Msegs
-				segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
-				segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
-				segs['z'].extend([seg.start_point.z, seg.end_point.z, None])
-
-			if plot3d:
-				scatter = go.Scatter3d
-				lineprops = {'width': 2}
-				plotprops = {'opacity': 1}
-			else:
-				scatter = go.Scatter
-				lineprops = {}
-				plotprops = {'opacity': .5}
-				if 'z' in Esegs: Esegs.pop('z')
-				if 'z' in Msegs: Msegs.pop('z')
-
-
-			if Esegs['x']:
-				fig.add_trace(scatter(**Esegs, mode='lines',
-					name='Ex'+(repr(gcline).lower()),
-					line=dict(color=colorD, **lineprops), **plotprops))
-			if Msegs['x']:
-				fig.add_trace(scatter(**Msegs, mode='lines',
-					name='Mx'+(repr(gcline).lower()),
-					line=dict(color=colorL, dash='dot', **lineprops), **plotprops))
-
-
-	def add_geometry(self):
-		"""Add geometry to this Layer based on the list of gcode lines:
-			- segments: a list of GSegments for each pair of extrusion lines
-			- planes:   planes representing the top and bottom boundaries of the
-								  layer, based on the layer height
-			- outline:  a list of GSegments representing the outline of the layer,
-									denoted by sections in Cura-generated gcode starting with
-									";TYPE:WALL-OUTER"
-		"""
-		if self.geometry or not self.has_moves:
-			return
-
-		self.geometry = Geometry(segments=[], planes=None, outline=[])
-
-		#Make segments from GCLines
-		self.preamble, self.geometry.segments, self.postamble = gcode2segments(self.lines, self.z)
-
-		#Construct top/bottom planes for intersections
-		(min_x, min_y), (max_x, max_y) = self.extents()
-		mid_x = min_x + .5 * (max_x - min_x)
-		z = self.z
-
-		plane_points = [(min_x, min_y), (mid_x, max_y), (max_x, max_y)]
-		bot_z        = z - self.layer_height/2
-		top_z        = z + self.layer_height/2
-		bottom       = Plane(*[Point(p[0], p[1], bot_z) for p in plane_points])
-		top          = Plane(*[Point(p[0], p[1], top_z) for p in plane_points])
-		bottom.z     = bot_z
-		top.z        = top_z
-
-		self.geometry.planes = Planes(bottom=bottom, top=top)
-
-		#Find the outline by using Cura comments for "wall-outer"
-		for part, lines in self.parts.items():
-			if 'type:wall-outer' in (lines[0].comment or '').lower():
-				self.geometry.outline.extend(
-						[line.segment for line in lines if line.is_xyextrude()])
-
-
-	def flatten_thread(self, thread: List[Segment]) -> List[GSegment]:
-		"""Return the input thread "flattened" to have the same z-height as the
-		layer, clipped to the top/bottom layer planes, and with resulting segments
-		that are on the same line combined."""
-		self.add_geometry()
-
-		top = self.geometry.planes.top
-		bot = self.geometry.planes.bottom
-		segs = []
-
-		for i,tseg in enumerate(thread):
-			#Is the thread segment entirely below or above the layer? If so, skip it.
-			if((tseg.start_point.z <  bot.z and tseg.end_point.z <  bot.z) or
-				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
-				print(f'Thread segment {tseg} endpoints not in layer')
-				continue
-
-			#Clip segments to top/bottom of layer (note "walrus" operator := )
-			if s := tseg.intersection(bot): self.in_out.append(s)
-			if e := tseg.intersection(top): self.in_out.append(e)
-			segs.append(GSegment(s or tseg.start_point, e or tseg.end_point))
-			if s or e:
-				print(f'Crop {tseg} to\n'
-						  f'     {segs[-1]}')
-
-			#Flatten segment to the layer's z-height
-			segs[-1].set_z(self.z)
-
-		#Combine collinear segments
-		segs = seg_combine(segs)
-
-		#Cache intersections
-		for seg in segs:
-			self.intersect_model(seg)
-
-		return segs
-
-
-	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
-		"""Return a list of GSegments which the given thread segments do not
-		intersect."""
-		#First find all *intersecting* GSegments
-		intersecting = set.union(*[set(self.model_isecs[tseg]['isec_segs']) for tseg in thread])
-
-		#And all non-intersecting GSegments
-		non_intersecting = set.union(*[set(self.model_isecs[tseg]['nsec_segs']) for tseg in thread])
-
-		#And return the difference
-		return non_intersecting - intersecting
-
-
-	def intersecting(self, tseg: GSegment) -> List[GSegment]:
-		"""Return a list of GSegments which the given thread segment intersects."""
-		return self.model_isecs[tseg]['isec_segs']
-
-
-	def anchors(self, tseg: Segment) -> List[Point]:
-		"""Return a list of "anchor points" - Points at which the given thread
-		segment intersects the layer geometry, ordered by distance to the
-		end point of the thread segment (with the assumption that this the
-		"true" anchor point, as the last location the thread will be stuck down."""
-		anchors = self.model_isecs[tseg]['isec_points']
-		entry   = tseg.start_point
-		exit    = tseg.end_point
-
-		print(f'anchors with thread segment: {tseg}')
-		print(f'isec anchors: {anchors}')
-		if entry in self.in_out and entry.inside(self.geometry.outline):
-			anchors.append(entry)
-			print(f'Entry anchor: {entry}')
-		if exit in self.in_out and exit.inside(self.geometry.outline):
-			anchors.append(exit)
-			print(f'Exit anchor: {exit}')
-
-		return sorted(anchors, key=lambda p:distance(tseg.end_point, p))
-
-
-	def intersect_model(self, tseg: GSegment):
-		"""Given a thread segment, return all of the intersections with the model's
-		printed lines of gcode. Returns
-			nsec_segs, isec_segs, isec_points
-		where
-			nsec_segs is non-intersecting GCLines
-			isec_segs is intersecting GCLines
-			isec_points is a list of GPoints for the intersections
-		"""
-		self.add_geometry()
-
-		#Caching
-		if tseg in self.model_isecs:
-			return self.model_isecs[tseg]
-
-		isecs = {
-			'nsec_segs': [],                      # Non-intersecting gcode segments
-			'isec_segs': [],   'isec_points': [], # Intersecting gcode segments and locations
-		}
-
-		for gcseg in self.geometry.segments:
-			if not gcseg.is_extrude: continue
-			if not hasattr(gcseg, 'printed'):
-				gcseg.printed = False
-			inter = gcseg.intersection(tseg)
-			if inter:
-				isecs['isec_segs'  ].append(gcseg)
-				isecs['isec_points'].append(inter)
-			else:
-				isecs['nsec_segs'].append(gcseg)
-
-		self.model_isecs[tseg] = isecs
 
 
 
@@ -627,8 +415,9 @@ class Step:
 		'thread':  {'mode':'lines', 'line': dict(color='yellow', width=1, dash='dot')},
 	}
 
-	def __init__(self, printer, name=''):
+	def __init__(self, steps_obj, name=''):
 		store_attr()
+		self.printer = steps_obj.printer
 		self.gcsegs = []
 
 
@@ -647,8 +436,33 @@ class Step:
 		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
 		and .gc_line2 member which are GCLines.
 		"""
-		#Collect all of the gc_lines from the GSegments that were add()'ed
-		gc_lines = sorted(sum([seg.gc_lines for seg in self.gcsegs], []))
+		gcode = GCLines()
+		missing = []
+
+		#Sort gcsegs by line number
+		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
+
+		#Find breaks in line numbers
+		#[(s1,s2) for s1, s2 in zip(gcsegs[:-1], gcsegs[1:]) if s2.first.lineno - s1.last.lineno > 1]
+		for seg1, seg2 in zip(self.gcsegs[:-1], self.gcsegs[1:]):
+			line1 = seg1.gc_lines.last
+			line2 = seg2.gc_lines.first
+
+			#Groups of lines in the two Segments are contiguous, so we can add the
+			# lines from the first Segment to the output
+			if line2.lineno - line1.lineno <= 1:
+				gcode.extend(seg1.gc_lines)
+
+			#Groups are not contiguous, so check if a move is required
+			else:
+				gcode.append(
+					#TODO: append a new GCLine here that is just the movement part of the
+					# last line in the missing chunk from the original layer gcode data,
+					# stored in self.steps_obj.layer.lines
+				(slice(line1.lineno + 1, line2.lineno))
+
+		return gcode, missing
+
 
 
 	def add(self, layer:TLayer, gcsegs:List[GSegment]):
@@ -719,7 +533,7 @@ class Steps:
 
 
 	def new_step(self, *messages):
-		self.steps.append(Step(self.printer, ' '.join(map(str,messages))))
+		self.steps.append(Step(self, ' '.join(map(str,messages))))
 		return self.current
 
 
@@ -891,7 +705,12 @@ if __name__ == "__main__":
 	thread_transform = [131.164, 110.421, 0]
 	tpath += [thread_transform, thread_transform]
 	thread_geom = tuple([Segment(Point(*s), Point(*e)) for s,e in tpath])
-	g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
-	t = Threader(g)
-	steps = t.route_layer(thread_geom, g.layers[3])
-	#print(steps)
+	excp = None
+	try:
+		g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
+	except GCodeException as e:
+		excp = e.obj
+		print(f'GCodeException: {e.message}')
+	else:
+		t = Threader(g)
+		steps = t.route_layer(thread_geom, g.layers[49])

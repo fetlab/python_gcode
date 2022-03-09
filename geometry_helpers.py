@@ -1,11 +1,9 @@
 import Geometry3D
-from typing import List
 from Geometry3D import Vector, Point, Segment, intersection
-from gcline import Line as GCLine
+from gcline import GCLine, GCLines
 from dataclasses import make_dataclass
 from copy import copy
 from fastcore.basics import patch
-from rich import print
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
@@ -50,7 +48,7 @@ def seg_combine(segs):
 	return r
 
 
-def gcode2segments(lines:List[GCLine], z, keep_moves_with_extrusions=True):
+def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 	"""Turn GCLines into GSegments. Keep in mind that the first line denotes the start
 	point only, and the second line denotes the action (e.g. extrude) *and* the end
 	point. Mark extrusion GSegments. Return preamble, segments, postamble.
@@ -61,16 +59,16 @@ def gcode2segments(lines:List[GCLine], z, keep_moves_with_extrusions=True):
 	"""
 	lines    = lines.copy()
 	last     = None
-	extra    = []
-	preamble = []
+	extra    = GCLines()
+	preamble = GCLines()
 	segments = []
 
 	#Put all beginning non-extrusion lines into preamble
-	while lines and not lines[0].is_xymove():
-		preamble.append(lines.pop(0))
+	while lines and not lines.first.is_xymove():
+		preamble.append(lines.popidx(0))
 
 	#Put the first xymove as the "last" item
-	last = lines.pop(0)
+	last = lines.popidx(0)
 
 	if keep_moves_with_extrusions:
 		for line in lines:
@@ -163,7 +161,7 @@ def __repr__(self:Vector):
 
 class GPoint(Point):
 	def __init__(self, *args, z=0):
-		"""Pass Geometry3D.Point arguments or a gcline.Line and optionally a *z*
+		"""Pass Geometry3D.Point arguments or a gcline.GCLine and optionally a *z*
 		argument. If *z* is missing it will be set to 0."""
 		if len(args) == 1 and isinstance(args[0], GCLine):
 			l = args[0]
@@ -206,7 +204,7 @@ Point.inside = GPoint.inside
 
 
 class GSegment(Geometry3D.Segment):
-	def __init__(self, a, b, z=0, gc_lines: List[GCLine]=None, is_extrude=False):
+	def __init__(self, a, b, z=0, gc_lines=None, is_extrude=False):
 		#Label whether this is an extrusion move or not
 		self.is_extrude = is_extrude
 
@@ -216,8 +214,8 @@ class GSegment(Geometry3D.Segment):
 		self.gc_line1 = None
 		self.gc_line2 = None
 
-		#Save *all* lines of gcode involved in this segment; the
-		self.gc_lines = gc_lines or []
+		#Save *all* lines of gcode involved in this segment
+		self.gc_lines = GCLines(gc_lines) or GCLines()
 
 		if isinstance(a, Point):
 			point1 = a
@@ -227,6 +225,9 @@ class GSegment(Geometry3D.Segment):
 			self.gc_lines.append(a)
 		elif isinstance(a, (tuple,list)):
 			point1 = GPoint(*a)
+		else:
+			raise ValueError(f"Arg a is type {type(a)} = {a} but that's not supported!")
+
 		if isinstance(b, Point):
 			point2 = b
 		elif isinstance(b, GCLine):
@@ -235,6 +236,8 @@ class GSegment(Geometry3D.Segment):
 			self.gc_lines.append(b)
 		elif isinstance(b, (tuple,list)):
 			point2 = GPoint(*b)
+		else:
+			raise ValueError(f"Arg b is type {type(b)} = {b} but that's not supported!")
 
 		if point1 == point2:
 			raise ValueError("Cannot initialize a Segment with two identical Points")
@@ -250,7 +253,9 @@ class GSegment(Geometry3D.Segment):
 	def __repr__(self):
 		if not(self.gc_line1 and self.gc_line2):
 			return super().__repr__()
-		return "<{}:{}↔︎{}:{}>".format(self.gc_line1.lineno, self.start_point,
+		return "<S[{}] {}:{}←→{}:{}>".format(
+				len(self.gc_lines),
+				self.gc_line1.lineno, self.start_point,
 				self.gc_line2.lineno, self.end_point)
 
 

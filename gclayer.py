@@ -1,10 +1,10 @@
-from gcline import Line
+from gcline import GCLine, GCLines
 
 class Layer():
 	def __init__(self, lines=[], layernum=None):
 		self.layernum  = layernum
 		self.preamble  = []
-		self.lines     = lines
+		self.lines     = GCLines(lines)
 		self.postamble = []
 		self.has_moves = any(l for l in self.lines if 'X' in l.args and 'Y' in l.args)
 
@@ -18,7 +18,7 @@ class Layer():
 
 	def lineno(self, number):
 		"""Return the line with the specified line number."""
-		return next((l for l in self.lines if l.lineno == number), None)
+		return self.lines[number]
 
 
 	def extents(self):
@@ -54,10 +54,10 @@ class Layer():
 
 
 	def extents_gcode(self):
-		"""Return two Lines of gcode that move to the extents."""
+		"""Return two GCLines of gcode that move to the extents."""
 		(min_x, min_y), (max_x, max_y) = self.extents()
-		return Line(code='G0', args={'X': min_x, 'Y': min_y}),\
-					 Line(code='G0', args={'X': max_x, 'Y': max_y})
+		return GCLine(code='G0', args={'X': min_x, 'Y': min_y}),\
+					 GCLine(code='G0', args={'X': max_x, 'Y': max_y})
 
 
 	@property
@@ -76,12 +76,12 @@ class Layer():
 
 	def set_preamble(self, gcodestr):
 		"""Insert lines of gcode at the beginning of the layer."""
-		self.preamble = [Line(l) for l in gcodestr.split('\n')]
+		self.preamble = [GCLine(l) for l in gcodestr.split('\n')]
 
 
 	def set_postamble(self, gcodestr):
 		"""Add lines of gcode at the end of the layer."""
-		self.postamble = [Line(l) for l in gcodestr.split('\n')]
+		self.postamble = [GCLine(l) for l in gcodestr.split('\n')]
 
 
 	def find(self, code):

@@ -28,6 +28,12 @@ init_notebook_mode(connected=True)
 #suppress scientific notation
 np.set_printoptions(suppress=True, precision=2)
 
+#Attempt to reload modules automatically
+# %load_ext autoreload
+# %autoreload 2
+
+from rich.console import Console
+print = Console(style="on #272727").print
 
 # %%
 def page_wide():
@@ -45,16 +51,24 @@ def page_wide():
 
 
 # %%
-import threader, geometry_helpers, gcode
+import threader, geometry_helpers, gcode, gcline, tlayer
 from parsers import cura4
-reload(geometry_helpers)
-reload(threader)
-reload(cura4)
-reload(gcode)
 from threader import TLayer, Threader, GCodeException
-page_wide()
 
 # %%
+reload(cura4)
+reload(gcode)
+reload(gcline)
+reload(geometry_helpers)
+reload(tlayer)
+reload(threader)
+import threader, geometry_helpers, gcode, gcline, tlayer
+from parsers import cura4
+from threader import TLayer, Threader, GCodeException
+from gcline import GCLine, GCLines
+
+# %%
+page_wide()
 thread_file = '/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle'
 tpath = np.array(pickle.load(open(thread_file, 'rb'))) * 10
 thread_transform = [131.164, 110.421, 0]
@@ -66,10 +80,21 @@ t = Threader(g)
 
 # %%
 stepsobj49 = t.route_layer(thread_geom, g.layers[49])
-stepsobj49.plot()
+#stepsobj49.plot()
 
 # %%
-sorted(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_line1.lineno)[2].gc_lines
+gc, m = stepsobj49.steps[1].gcode()
+m
+
+# %%
+gcsegs = sorted(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_lines.first)
+for s1, s2 in zip(gcsegs[:-1], gcsegs[1:]):
+	if s2.gc_lines.first.lineno - s1.gc_lines.last.lineno > 1:
+		missing = slice(s1.gc_lines.last.lineno+1, s2.gc_lines.first.lineno)
+		print(f'[yellow] {s1.gc_lines.last}\n',
+		'\n'.join(map(repr,g.layers[49].lines[missing])),
+		f'\n[yellow] {s2.gc_lines.first}', end='\n\n')
+
 
 # %%
 stepsobj50 = t.route_layer(thread_geom, g.layers[50])

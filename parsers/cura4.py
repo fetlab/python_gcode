@@ -1,5 +1,5 @@
 import re
-from gcline import Line
+from gcline import GCLine
 from gclayer import Layer
 from util import listsplit
 
@@ -61,7 +61,7 @@ def detect(lines):
 def parse(gcobj):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
 	layer_class = gcobj.layer_class
-	glines = [Line(l, lineno=n+1) for n,l in enumerate(gcobj.filelines)]
+	glines = [GCLine(l, lineno=n+1) for n,l in enumerate(gcobj.filelines)]
 	gcobj.lines = glines.copy()
 
 	#Extract the preamble and postamble
@@ -101,7 +101,7 @@ def parse(gcobj):
 				lambda l: l.line.startswith(';LAYER'), layer.lines)).line.split(':')[1])
 		except (StopIteration, AttributeError) as e:
 			raise GCodeException(layer,
-					f"Couldn't find ';LAYER' comment in layer {i+1}") from e
+					f"Couldn't find ';LAYER' comment in layer {i+1} (lines {layer.lines.first().lineno} - {layer.lines.last().lineno})") from e
 
 	postamble = layer_class(postamble, layernum='postamble')
 	preamble  = layer_class(preamble, layernum='preamble')

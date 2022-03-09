@@ -1,12 +1,12 @@
 import sys, warnings
 import parsers
 from gclayer import Layer
-from gcline import Line
+from gcline import GCLine
 
 
 class GcodeFile:
 	def __init__(self, filename=None, filestring='', layer_class=Layer,
-			line_class=Line, parser=None):
+			line_class=GCLine, parser=None):
 		"""Parse a file's worth of gcode."""
 		self.preamble = None
 		self.layers   = []
