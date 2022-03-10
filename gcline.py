@@ -3,97 +3,8 @@ from functools import total_ordering
 from collections import UserList
 from copy import copy
 
-class GCLines(UserList):
-	"""Represent a collection of gcode lines with easy access to line numbers."""
-	def __init__(self, data=None):
-		data = data or []
-		super().__init__(data)
-		self._generate_index()
-
-	def _generate_index(self):
-		"""Create an index relating the given GCLine line number to its index in the
-		underlying data structure."""
-		self._index = {l.lineno: i for i,l in enumerate(self.data)}
-
-
-	def __getitem__(self, lineno):
-		if isinstance(lineno, slice):
-			r = []
-			for i in range(lineno.start, lineno.stop, lineno.step or 1):
-				try:
-					r.append(self.data[self._index[i]])
-				except KeyError:
-					r.append(None)
-			return r
-		else:
-			try:
-				return self.data[self.index(lineno)]
-			except KeyError as e:
-				raise IndexError(f'GCLine number {lineno} not in GCLines') from e
-
-
-	def __delitem__(self, lineno):
-		try:
-			del(self.data[self.index(lineno)])
-			del(self._index[lineno])
-		except KeyError:
-			raise IndexError(f'GCLine number {lineno} not in GCLines')
-
-
-	#One-line functions
-	def __iter__    (self):         return iter(self.data)
-	def __contains__(self, lineno): return lineno in self._index
-	def index       (self, lineno): return self._index[lineno]
-	def remove      (self, line):   del(self[line.lineno])
-
-
-	def popidx(self, idx):
-		"""Pop from the underlying data."""
-		line = self.data.pop(idx)
-		del(self._index[line.lineno])
-		return line
-
-
-	def append(self, line):
-		self.data.append(line)
-		self._index[line.lineno] = len(self.data)
-
-
-	def reverse(self):
-		self.data.reverse()
-		self._generate_index()
-
-
-	def sort(self, **kwargs):
-		self.data.sort(**kwargs)
-		self._generate_index()
-
-
-	#Convenience methods to avoid having to use .data
-	@property
-	def first(self): return self.data[0]
-	@property
-	def last (self): return self.data[-1]
-
-	def start(self, is_extrude=False):
-		"""Return the first X/Y move in this group of GCLines"""
-		test = GCLine.is_xyextrude if is_extrude else GCLine.is_xymove
-		try:
-			return next(filter(test, self.data))
-		except StopIteration:
-			raise ValueError('No X/Y moves in this group')
-
-
-	def end(self, is_extrude=False):
-		"""Return the last X/Y move in this group of GCLines"""
-		test = GCLine.is_xyextrude if is_extrude else GCLine.is_xymove
-		try:
-			return next(filter(test, reversed(self.data)))
-		except StopIteration:
-			raise ValueError('No X/Y moves in this group')
-
-
-
+from rich.console import Console
+rprint = Console(style="on #272727").print
 
 @total_ordering
 class GCLine:
@@ -176,8 +87,12 @@ class GCLine:
 
 	def as_xymove(self):
 		"""Return a copy of this line without extrusion."""
+		if not self.is_xymove():
+			raise ValueError(f'Call of as_xymove() on non-xymove GCLine {self}')
 		c = copy(self)
-		del(c.args['E'] #TODO
+		if 'E' in c.args:
+			del(c.args['E'])
+		return c
 
 
 	def construct(self):
@@ -194,6 +109,131 @@ class GCLine:
 			out.append('; ' + self.comment)
 
 		return ' '.join(out)
+
+
+class GCLines(UserList):
+	"""Represent a collection of gcode lines with easy access to line numbers."""
+	def __init__(self, data=None):
+		data = data or []
+		super().__init__(data)
+		self._generate_index()
+
+
+	def _generate_index(self):
+		"""Create an index relating the given GCLine line number to its index in the
+		underlying data structure."""
+		self._index = {l.lineno: i for i,l in enumerate(self.data)}
+
+
+	def __getitem__(self, lineno):
+		if isinstance(lineno, slice):
+			s, e = lineno.start, lineno.stop
+			if s < self.lineno_min() or e > self.lineno_max():
+				raise ValueError(' '.join((f'Requested slice {s}--{e or "end"} is out of range',
+						f'for available lines {self.lineno_min()}--{self.lineno_max()}.')))
+
+			r = []
+			missing = []
+			for i in range(s, e, lineno.step or 1):
+				try:
+					r.append(self.data[self._index[i]])
+				except KeyError:
+					missing.append(i)
+			if missing:
+				rprint(f'Warning: you requested lines {s}--{e}',
+							f'but lines {missing} were not in this object: {self.summary()}')
+			return GCLines(r)
+		else:
+			try:
+				return self.data[self.index(lineno)]
+			except KeyError as e:
+				raise IndexError(f'GCLine number {lineno} not in GCLines') from e
+
+
+	def __delitem__(self, lineno):
+		try:
+			del(self.data[self.index(lineno)])
+			del(self._index[lineno])
+		except KeyError:
+			raise IndexError(f'GCLine number {lineno} not in GCLines')
+
+
+	def __repr__(self):
+		return f'{self.summary()}\n' + '\n'.join(map(repr, sorted(self.data)))
+
+
+	def summary(self):
+		n = len(self.data)
+		if n == 0:
+			return '<GCLines with 0 lines>'
+		if n > 1:
+			return ' '.join((f'<GCLines with {n} lines from',
+											 f'{self.lineno_min()} to {self.lineno_max()}>'))
+		return f'<GCLines with 1 line, number {self.lineno_min()}>'
+
+
+	#One-line functions
+	def __iter__    (self):         return iter(self.data)
+	def __contains__(self, lineno): return lineno in self._index
+	def index       (self, lineno): return self._index[lineno]
+	def remove      (self, line):   del(self[line.lineno])
+	def lineno_min  (self):         return min(self._index.keys())
+	def lineno_max  (self):         return max(self._index.keys())
+
+
+	def popidx(self, idx):
+		"""Pop from the underlying data."""
+		line = self.data.pop(idx)
+		del(self._index[line.lineno])
+		return line
+
+
+	def extend(self, data):
+		self.data.extend(data)
+		self._generate_index()
+
+
+	def append(self, line):
+		self.data.append(line)
+		self._index[line.lineno] = len(self.data)
+
+
+	def reverse(self):
+		self.data.reverse()
+		self._generate_index()
+
+
+	def sort(self, **kwargs):
+		self.data.sort(**kwargs)
+		self._generate_index()
+
+
+	@property
+	def first(self) -> GCLine:
+		"""Return the first line in this group of GCLines."""
+		return self.data[0]
+
+
+	@property
+	def last (self) -> GCLine:
+		"""Return the last line in this group of GCLines."""
+		return self.data[-1]
+
+
+	def start(self, is_extrude=False) -> GCLine:
+		"""Return the first X/Y (extruding) move in this group of GCLines or None
+		if no moves are present."""
+		test = GCLine.is_xyextrude if is_extrude else GCLine.is_xymove
+		return next(filter(test, self.data), None)
+
+
+	def end(self, is_extrude=False) -> GCLine:
+		"""Return the last X/Y (extruding) move in this group of GCLines or None
+		if no moves are present."""
+		test = GCLine.is_xyextrude if is_extrude else GCLine.is_xymove
+		return next(filter(test, reversed(self.data)), None)
+
+
 
 
 # def doc(self):
