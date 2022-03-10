@@ -3,16 +3,14 @@ from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
 from math import radians, sin, cos, degrees
 from typing import List
-from geometry_helpers import GPoint, GSegment, Geometry, Planes, HalfLine, segs_xy, seg_combine, GCLine, gcode2segments
+from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy, GCLine
 from fastcore.basics import store_attr
 from math import atan2
-from parsers.cura4 import Cura4Layer
-from itertools import cycle
 from tlayer import TLayer
 from gcline import GCLines
 
 from rich.console import Console
-print = Console(style="on #272727").print
+rprint = Console(style="on #272727").print
 """
 Usage notes:
 	* The thread should be anchored on the bed such that it doesn't intersect the
@@ -133,7 +131,7 @@ class Ring:
 
 
 	def changed(self, attr, old_value, new_value):
-		print(f'Ring.{attr} changed from {old_value} to {new_value}')
+		rprint(f'Ring.{attr} changed from {old_value} to {new_value}')
 
 
 	@property
@@ -295,7 +293,7 @@ class Printer:
 
 
 	def changed(self, attr, old_value, new_value):
-		print(f'Printer.{attr} changed from {old_value} to {new_value}')
+		rprint(f'Printer.{attr} changed from {old_value} to {new_value}')
 		setattr(self.ring, attr[1])
 		if attr[1] in 'xy':
 			#Move the ring to keep the thread intersecting the anchor
@@ -371,7 +369,7 @@ class Printer:
 		anchor = self.anchor.as2d()
 		#Form a half line (basically a ray) from the anchor through the target
 		hl = HalfLine(anchor, target.as2d())
-		print(f'HalfLine from {self.anchor} to {target}:\n', hl)
+		rprint(f'HalfLine from {self.anchor} to {target}:\n', hl)
 
 		isec = intersection(hl, self.ring.geometry)
 		if isec is None:
@@ -418,7 +416,8 @@ class Step:
 	def __init__(self, steps_obj, name=''):
 		store_attr()
 		self.printer = steps_obj.printer
-		self.gcsegs = []
+		self.layer   = steps_obj.layer
+		self.gcsegs  = []
 
 
 	def __repr__(self):
@@ -437,36 +436,41 @@ class Step:
 		and .gc_line2 member which are GCLines.
 		"""
 		gcode = GCLines()
-		missing = []
 
 		#Sort gcsegs by line number
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
 
-		#Find breaks in line numbers
-		#[(s1,s2) for s1, s2 in zip(gcsegs[:-1], gcsegs[1:]) if s2.first.lineno - s1.last.lineno > 1]
+		rprint(f'{len(self.gcsegs)} segs')
+
+		#Find breaks in line numbers between gc_lines for two adjacent segments
 		for seg1, seg2 in zip(self.gcsegs[:-1], self.gcsegs[1:]):
-			line1 = seg1.gc_lines.last
-			line2 = seg2.gc_lines.first
+			#Don't add last line to avoid double lines from adjacent segments
+			gcode.extend(seg1.gc_lines.data[:-1])
 
-			#Groups of lines in the two Segments are contiguous, so we can add the
-			# lines from the first Segment to the output
-			if line2.lineno - line1.lineno <= 1:
-				gcode.extend(seg1.gc_lines)
+			#Get line numbers bordering the interval between the two segments
+			seg1_last  = seg1.gc_lines.last.lineno
+			seg2_first = seg2.gc_lines.first.lineno
 
-			#Groups are not contiguous, so check if a move is required
-			else:
-				gcode.append(
-					#TODO: append a new GCLine here that is just the movement part of the
-					# last line in the missing chunk from the original layer gcode data,
-					# stored in self.steps_obj.layer.lines
-				(slice(line1.lineno + 1, line2.lineno))
+			#If the line numbers are not contiguous, check if a move is required
+			if missing_move := self.layer.lines[seg1_last+1:seg2_first].end():
+				#seg2 won't have the repeated last line from seg1, so add it
+				gcode.append(seg1.gc_lines.last)
 
-		return gcode, missing
+				#Create a "fake" new gcode line to position the head in the right place
+				# for the next extrusion
+				new_line = missing_move.as_xymove()
+				new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
+				gcode.append(new_line)
 
+		#Add last segment's lines
+		rprint(len(self.gcsegs))
+		#gcode.extend(self.gcsegs[-1].gc_lines)
+
+		return gcode
 
 
 	def add(self, layer:TLayer, gcsegs:List[GSegment]):
-		print(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs')
+		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs')
 		for seg in gcsegs:
 			if not seg.printed:
 				self.gcsegs.append(seg)
@@ -474,7 +478,7 @@ class Step:
 
 
 	def __enter__(self):
-		print(f'Start: [light_sea_green italic]{self.name}')
+		rprint(f'[bold white on red]Start:[/] [light_sea_green italic]{self.name}')
 		return self
 
 
@@ -542,7 +546,7 @@ class Steps:
 		last_anchor = steps[0].printer.anchor
 
 		for stepnum,step in enumerate(steps):
-			print(f'Step {stepnum}: {step.name}')
+			rprint(f'Step {stepnum}: {step.name}')
 			fig = go.Figure()
 
 			#Plot the bed
@@ -610,7 +614,7 @@ class Steps:
 					showlegend=False,)
 			fig.show('notebook')
 
-		print('Finished routing this layer')
+		rprint('Finished routing this layer')
 
 
 
@@ -632,9 +636,9 @@ class Threader:
 		gcode; for example, printing all of the non-thread-intersecting segments
 		would be one "step".
 		"""
-		print(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
+		rprint(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
 		for i, tseg in enumerate(thread_list):
-			print(f'\t{i}. {tseg}')
+			rprint(f'\t{i}. {tseg}')
 
 		self.printer.z = layer.z
 		steps = Steps(layer=layer, printer=self.printer)
@@ -644,12 +648,12 @@ class Threader:
 		steps.flat_thread = thread
 
 		if not thread:
-			print('Thread not in layer at all')
+			rprint('Thread not in layer at all')
 			with steps.new_step('Thread not in layer') as s:
 				s.add(layer.lines)
 			return steps
 
-		print(f'{len(thread)} thread segments in this layer:\n\t{thread}')
+		rprint(f'{len(thread)} thread segments in this layer:\n\t{thread}')
 		for i,thread_seg in enumerate(thread):
 			anchors = layer.anchors(thread_seg)
 			self.printer.layer = layer
@@ -663,7 +667,7 @@ class Threader:
 						 f'or {len(thread[i:])} remaining thread segments')
 			with steps.new_step(*msg) as s:
 				layer.intersect_model(traj)
-				print(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
+				rprint(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
 				s.add(layer, layer.non_intersecting(thread[i:] + [traj]))
 
 			if len(layer.intersecting(thread_seg)) > 0:
@@ -679,7 +683,7 @@ class Threader:
 			with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
 				s.add(layer, remaining)
 
-		print('[yellow]Done with thread for this layer[/];',
+		rprint('[yellow]Done with thread for this layer[/];',
 				len([s for s in layer.geometry.segments if not s.printed]),
 				'gcode lines left')
 
@@ -710,7 +714,7 @@ if __name__ == "__main__":
 		g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
 	except GCodeException as e:
 		excp = e.obj
-		print(f'GCodeException: {e.message}')
+		rprint(f'GCodeException: {e.message}')
 	else:
 		t = Threader(g)
 		steps = t.route_layer(thread_geom, g.layers[49])

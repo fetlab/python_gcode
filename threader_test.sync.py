@@ -33,7 +33,7 @@ np.set_printoptions(suppress=True, precision=2)
 # %autoreload 2
 
 from rich.console import Console
-print = Console(style="on #272727").print
+rprint = Console(style="on #272727").print
 
 # %%
 def page_wide():
@@ -54,6 +54,7 @@ def page_wide():
 import threader, geometry_helpers, gcode, gcline, tlayer
 from parsers import cura4
 from threader import TLayer, Threader, GCodeException
+page_wide()
 
 # %%
 reload(cura4)
@@ -68,7 +69,6 @@ from threader import TLayer, Threader, GCodeException
 from gcline import GCLine, GCLines
 
 # %%
-page_wide()
 thread_file = '/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle'
 tpath = np.array(pickle.load(open(thread_file, 'rb'))) * 10
 thread_transform = [131.164, 110.421, 0]
@@ -83,11 +83,19 @@ stepsobj49 = t.route_layer(thread_geom, g.layers[49])
 #stepsobj49.plot()
 
 # %%
-gc, m = stepsobj49.steps[1].gcode()
-m
+rprint(f'{stepsobj49}')
 
 # %%
-gcsegs = sorted(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_lines.first)
+stepsobj49.steps[1].gcode()[14830:14850]
+
+# %%
+stepsobj49.steps[1].gcsegs[130].gc_lines
+
+# %%
+stepsobj49.steps[1].gcsegs[131].gc_lines
+
+# %%
+gcsegs = sort_48._indexed(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_lines.first)
 for s1, s2 in zip(gcsegs[:-1], gcsegs[1:]):
 	if s2.gc_lines.first.lineno - s1.gc_lines.last.lineno > 1:
 		missing = slice(s1.gc_lines.last.lineno+1, s2.gc_lines.first.lineno)
