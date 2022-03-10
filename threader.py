@@ -436,35 +436,42 @@ class Step:
 		and .gc_line2 member which are GCLines.
 		"""
 		gcode = GCLines()
+		if not self.gcsegs:
+			return gcode
 
 		#Sort gcsegs by line number
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
 
-		rprint(f'{len(self.gcsegs)} segs')
-
 		#Find breaks in line numbers between gc_lines for two adjacent segments
 		for seg1, seg2 in zip(self.gcsegs[:-1], self.gcsegs[1:]):
-			#Don't add last line to avoid double lines from adjacent segments
-			gcode.extend(seg1.gc_lines.data[:-1])
-
 			#Get line numbers bordering the interval between the two segments
 			seg1_last  = seg1.gc_lines.last.lineno
 			seg2_first = seg2.gc_lines.first.lineno
 
-			#If the line numbers are not contiguous, check if a move is required
-			if missing_move := self.layer.lines[seg1_last+1:seg2_first].end():
-				#seg2 won't have the repeated last line from seg1, so add it
-				gcode.append(seg1.gc_lines.last)
+			if seg2_first - seg1_last == 0:
+				#Don't add last line to avoid double lines from adjacent segments
+				gcode.extend(seg1.gc_lines.data[:-1])
+			else:
+				#Include the last line since the next segment doesn't duplicate it
+				gcode.extend(seg1.gc_lines.data)
 
-				#Create a "fake" new gcode line to position the head in the right place
-				# for the next extrusion
-				new_line = missing_move.as_xymove()
-				new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
-				gcode.append(new_line)
+				#If the line numbers are not contiguous, check if a move is required
+				if missing_move := self.layer.lines[seg1_last+1:seg2_first].end():
+					#seg2 won't have the repeated last line from seg1, so add it
+					gcode.append(seg1.gc_lines.last)
+
+					#Create a "fake" new gcode line to position the head in the right place
+					# for the next extrusion
+					new_line = missing_move.as_xymove()
+					new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
+					new_line.comment = f'---- Skipped {seg2_first-seg1_last-1} lines; fake move'
+					gcode.append(new_line)
 
 		#Add last segment's lines
-		rprint(len(self.gcsegs))
-		#gcode.extend(self.gcsegs[-1].gc_lines)
+		gcode.extend(self.gcsegs[-1].gc_lines)
+
+		#And any extra attached to the layer
+		gcode.extend(self.layer.postamble)
 
 		return gcode
 
@@ -539,6 +546,17 @@ class Steps:
 	def new_step(self, *messages):
 		self.steps.append(Step(self, ' '.join(map(str,messages))))
 		return self.current
+
+
+	def gcode(self):
+		"""Return the gcode for all steps."""
+		r = GCLines()
+		for i,step in enumerate(self.steps):
+			g = step.gcode()
+			# r.append(GCLine(lineno=(g.first.lineno - .5) if g else 0,
+			# 	comment=f'Step {i} ({len(g)} lines) ---------------------------')
+			r.extend(g)
+		return r
 
 
 	def plot(self, prev_layer:TLayer=None):

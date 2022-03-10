@@ -35,7 +35,6 @@ np.set_printoptions(suppress=True, precision=2)
 from rich.console import Console
 rprint = Console(style="on #272727").print
 
-# %%
 def page_wide():
 	display(HTML(
 	"""
@@ -50,23 +49,10 @@ def page_wide():
 	"""))
 
 
-# %%
 import threader, geometry_helpers, gcode, gcline, tlayer
 from parsers import cura4
 from threader import TLayer, Threader, GCodeException
 page_wide()
-
-# %%
-reload(cura4)
-reload(gcode)
-reload(gcline)
-reload(geometry_helpers)
-reload(tlayer)
-reload(threader)
-import threader, geometry_helpers, gcode, gcline, tlayer
-from parsers import cura4
-from threader import TLayer, Threader, GCodeException
-from gcline import GCLine, GCLines
 
 # %%
 thread_file = '/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle'
@@ -83,16 +69,19 @@ stepsobj49 = t.route_layer(thread_geom, g.layers[49])
 #stepsobj49.plot()
 
 # %%
-rprint(f'{stepsobj49}')
+gc = stepsobj49.gcode()
 
 # %%
-stepsobj49.steps[1].gcode()[14830:14850]
+ogc = g.layers[49].lines
+rprint(ogc.summary())
+sorted(ogc[set(gc._index.keys()).difference(ogc._index.keys())])
 
 # %%
-stepsobj49.steps[1].gcsegs[130].gc_lines
+stepsobj49.steps[1].gcsegs[-1].gc_lines
+
 
 # %%
-stepsobj49.steps[1].gcsegs[131].gc_lines
+g.layers[49].postamble
 
 # %%
 gcsegs = sort_48._indexed(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_lines.first)
