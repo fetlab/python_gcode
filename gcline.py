@@ -86,21 +86,19 @@ class GCLine:
 
 
 	def as_xymove(self):
-		"""Return a copy of this line without extrusion."""
+		"""Return a copy of this line without extrusion, turning it into a G0."""
 		if not self.is_xymove():
 			raise ValueError(f'Call of as_xymove() on non-xymove GCLine {self}')
 		c = copy(self)
 		if 'E' in c.args:
 			del(c.args['E'])
+		c.code = 'G0'
 		return c
 
 
 	def construct(self):
 		"""Construct and return a line of gcode based on self.code,
 		self.args, and self.comment."""
-		if self.empty:
-			return self.line
-
 		out = []
 		if self.code:
 			out.append(self.code)
@@ -122,32 +120,47 @@ class GCLines(UserList):
 	def _generate_index(self):
 		"""Create an index relating the given GCLine line number to its index in the
 		underlying data structure."""
-		self._index = {l.lineno: i for i,l in enumerate(self.data)}
+		self._index = {}
+		for i,l in enumerate(self.data):
+			if l.lineno is None or l.lineno == '':
+				raise ValueError(f"Can't store GCLine without lineno: {l}")
+			self._index[l.lineno] = i
 
 
-	def __getitem__(self, lineno):
-		if isinstance(lineno, slice):
-			s, e = lineno.start, lineno.stop
-			if s < self.lineno_min() or e > self.lineno_max():
-				raise ValueError(' '.join((f'Requested slice {s}--{e or "end"} is out of range',
-						f'for available lines {self.lineno_min()}--{self.lineno_max()}.')))
+	def __getitem__(self, to_get):
+		if not isinstance(to_get, (slice, list, tuple, set)):
+			try:
+				return self.data[self.index(to_get)]
+			except KeyError as e:
+				raise IndexError(f'GCLine number {to_get} not in GCLines') from e
 
-			r = []
-			missing = []
-			for i in range(s, e, lineno.step or 1):
+		else:
+			#Support slicing, including slicing by list
+			r, missing = [], []
+			fetch = to_get
+
+			if isinstance(to_get, slice):
+				#Account for slicing with empty values: list[:10] or list[10:]
+				s = to_get.start if to_get.start is not None else self.lineno_min()
+				e = to_get.stop  if to_get.stop  is not None else self.lineno_max()
+
+				if s < self.lineno_min() or e > self.lineno_max():
+					raise ValueError(' '.join((f'Requested slice {s}--{e or "end"} is out of range',
+							f'for available lines {self.lineno_min()}--{self.lineno_max()}.')))
+
+				fetch = range(s, e, to_get.step or 1)
+
+			for i in fetch:
 				try:
 					r.append(self.data[self._index[i]])
 				except KeyError:
 					missing.append(i)
+
 			if missing:
 				rprint(f'Warning: you requested lines {s}--{e}',
 							f'but lines {missing} were not in this object: {self.summary()}')
+
 			return GCLines(r)
-		else:
-			try:
-				return self.data[self.index(lineno)]
-			except KeyError as e:
-				raise IndexError(f'GCLine number {lineno} not in GCLines') from e
 
 
 	def __delitem__(self, lineno):
@@ -159,7 +172,7 @@ class GCLines(UserList):
 
 
 	def __repr__(self):
-		return f'{self.summary()}\n' + '\n'.join(map(repr, sorted(self.data)))
+		return f'{self.summary()}\n' + '\n'.join(map(repr, self.data))
 
 
 	def summary(self):
