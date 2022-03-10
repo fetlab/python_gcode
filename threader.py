@@ -120,6 +120,11 @@ class Ring:
 		self.center        = center or GPoint(radius, 0, 0)
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
 
+		#Defaults for rotating gear
+		self.steps_per_rotation = 200   #For the stepper motor
+		self.motor_gear_teeth   = 30
+		self.ring_gear_teeth    = 125
+
 
 	x = property(**attrhelper('center.x'))
 	y = property(**attrhelper('center.y'))
