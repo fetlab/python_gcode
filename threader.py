@@ -121,9 +121,19 @@ class Ring:
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
 
 		#Defaults for rotating gear
-		self.steps_per_rotation = 200   #For the stepper motor
-		self.motor_gear_teeth   = 30
-		self.ring_gear_teeth    = 125
+		steps_per_rotation = 200   #For the stepper motor
+		motor_gear_teeth   = 30
+		ring_gear_teeth    = 125
+
+		#How many motor steps to get a full ring rotation? 833
+		self.steps = steps_per_rotation * self.ring_gear_teeth / self.motor_gear_teeth
+
+		#TODO: figure out M92 command for ring to change steps/unit to something
+		# that makes sense - translate units to degrees of ring rotation or
+		# something like that. Then G commands should be relatively
+		# straightforward.
+		#
+		# It looks like maybe I'll want microsteps? See zettle page on gcode.
 
 
 	x = property(**attrhelper('center.x'))
