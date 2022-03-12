@@ -121,12 +121,13 @@ class Ring:
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
 
 		#Defaults for rotating gear
-		steps_per_rotation = 200   #For the stepper motor
+		steps_per_rotation = 200 * 16   #For the stepper motor; 16 microsteps
 		motor_gear_teeth   = 30
 		ring_gear_teeth    = 125
 
-		#How many motor steps to get a full ring rotation? 833
-		self.steps = steps_per_rotation * self.ring_gear_teeth / self.motor_gear_teeth
+		#How many motor steps per degree?
+		self.esteps_degree = int((steps_per_rotation *
+			self.ring_gear_teeth / self.motor_gear_teeth) / 360)
 
 		#TODO: figure out M92 command for ring to change steps/unit to something
 		# that makes sense - translate units to degrees of ring rotation or
@@ -143,6 +144,14 @@ class Ring:
 
 	def __repr__(self):
 		return f'Ring({degrees(self._angle):.2f}°)'
+
+
+	def gcode_preamble(self):
+		"""Return any code that should go in the preamble of a .gcode file."""
+		#TODO: add cold extrusion allowance for T1
+		return textwrap.dedent(f"""\
+			M92 T1 E{self.esteps_degree}
+			""")
 
 
 	def changed(self, attr, old_value, new_value):
@@ -655,6 +664,10 @@ class Threader:
 	def __init__(self, gcode):
 		store_attr()
 		self.printer = Printer()
+
+		#TODO: add special preamble to gcode object for when gcode is generated to
+		# e.g. set M92. Maybe call each gcode-generating class for preamble
+		# commands first?
 
 
 	def route_model(self, thread):
