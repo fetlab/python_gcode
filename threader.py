@@ -7,7 +7,7 @@ from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy, GCLine
 from fastcore.basics import store_attr
 from math import atan2
 from tlayer import TLayer
-from gcline import GCLines
+from gcline import GCLine, GCLines
 
 from rich.console import Console
 rprint = Console(style="on #272727").print
@@ -121,20 +121,14 @@ class Ring:
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
 
 		#Defaults for rotating gear
-		steps_per_rotation = 200 * 16   #For the stepper motor; 16 microsteps
-		motor_gear_teeth   = 30
-		ring_gear_teeth    = 125
+		steps_per_rotation  = 200 * 16   #For the stepper motor; 16 microsteps
+		motor_gear_teeth    = 30
+		ring_gear_teeth     = 125
+		self.ring_direction = -1  # -1 since positive steps make it go CCW
 
 		#How many motor steps per degree?
 		self.esteps_degree = int((steps_per_rotation *
 			self.ring_gear_teeth / self.motor_gear_teeth) / 360)
-
-		#TODO: figure out M92 command for ring to change steps/unit to something
-		# that makes sense - translate units to degrees of ring rotation or
-		# something like that. Then G commands should be relatively
-		# straightforward.
-		#
-		# It looks like maybe I'll want microsteps? See zettle page on gcode.
 
 
 	x = property(**attrhelper('center.x'))
@@ -146,12 +140,15 @@ class Ring:
 		return f'Ring({degrees(self._angle):.2f}°)'
 
 
-	def gcode_preamble(self):
+	def gcode_preamble(self) -> GCLines:
 		"""Return any code that should go in the preamble of a .gcode file."""
-		#TODO: add cold extrusion allowance for T1
-		return textwrap.dedent(f"""\
-			M92 T1 E{self.esteps_degree}
-			""")
+		return GCLines([
+			GCline(code='T1', comment='Switch to ring extruder'),
+			GCLine(code='M302', args={'P1':1}, comment='Disable cold extrusion prevention'),
+			GCLine(code='M92', args=dict(T=1, E=self.esteps_degree),
+				comment='Set steps per degree of ring rotation'),
+			GCline(code='T0', comment='Switch back to default extruder'),
+		])
 
 
 	def changed(self, attr, old_value, new_value):
@@ -202,15 +199,27 @@ class Ring:
 		)
 
 
-	def gcode(self):
+	def gcode_move(self):
 		"""Return the gcode necessary to move the ring from its starting angle
 		to its requested one."""
 		#Were there any changes in angle?
 		if self.angle == self.initial_angle:
 			return
+
 		#TODO: generate movement code here; by default move the minimum angle
-		gc = GCLine(comment=
-			f'----- Ring move from {degrees(self.initial_angle)} to {degrees(self.angle)}')
+		# Take care of 0 crossing: 10 <-> -10
+		# and 360 crossing:        10 <->  350
+		if ((dest - source + 360) % 360 < 180)
+		  # ccw
+		else:
+		  # cw
+
+		gc = GCLines([
+			GCline(code='T1', comment='Switch to ring extruder'),
+			GCLine(code='G1', args=dict(E=
+				comment=f'Ring move from {degrees(self.initial_angle)} to {degrees(self.angle)}')
+			GCline(code='T0', comment='Switch back to default extruder'),
+		])
 		self._angle = self.initial_angle
 		return gc
 
