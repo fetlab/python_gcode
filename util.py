@@ -65,3 +65,23 @@ def timing(f):
 		print(f'{f.__name__} took {end-start:2.4f}s')
 		return result
 	return wrap
+
+
+
+class Restore:
+	def __init__(self, obj, vars):
+		self._saved = {v: getattr(obj, v) for v in vars}
+		self._obj = obj
+		self.changed = {}
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, exc_type, value, tb):
+		if exc_type is not None:
+			return False
+		for var,oldval in self._saved.items():
+			newval = getattr(self._obj, var)
+			if newval != oldval:
+				self.changed[var] = newval
+			setattr(self._obj, var, oldval)

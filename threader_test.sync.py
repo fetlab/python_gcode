@@ -28,9 +28,6 @@ init_notebook_mode(connected=True)
 #suppress scientific notation
 np.set_printoptions(suppress=True, precision=2)
 
-#Attempt to reload modules automatically
-# %load_ext autoreload
-# %autoreload 2
 
 from rich.console import Console
 rprint = Console(style="on #272727").print
@@ -54,6 +51,11 @@ from parsers import cura4
 from threader import TLayer, Threader, GCodeException
 page_wide()
 
+#Attempt to reload modules automatically
+# %load_ext autoreload
+# %autoreload 2
+# %aimport -rich
+
 # %%
 thread_file = '/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle'
 tpath = np.array(pickle.load(open(thread_file, 'rb'))) * 10
@@ -70,6 +72,12 @@ stepsobj49 = t.route_layer(thread_geom, g.layers[49])
 
 # %%
 gc = stepsobj49.gcode()
+
+# %%
+stepsobj49.printer.gcode(gc)
+
+# %%
+list(_)
 
 # %%
 ogc = g.layers[49].lines

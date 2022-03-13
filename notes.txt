@@ -1,5 +1,6 @@
 Groups of non-contiguous gcode lines; the first and last in each group are the
-first and last in two subsequent GSegments.gc_gclines .
+first and last in two subsequent GSegments.gc_gclines . The intervening lines
+are the missing lines from the layer.
 
 [14804] G1 X86.932 Y113.328 E199.84614
 	[14805] G1 X88.587 Y114.984 E199.92401 

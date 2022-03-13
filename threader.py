@@ -1,13 +1,14 @@
 import plotly.graph_objects as go
 from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
-from math import radians, sin, cos, degrees
+from math import sin, cos, degrees
 from typing import List
-from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy, GCLine
+from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy
 from fastcore.basics import store_attr
 from math import atan2
 from tlayer import TLayer
 from gcline import GCLine, GCLines
+from util import Restore
 
 from rich.console import Console
 rprint = Console(style="on #272727").print
@@ -124,11 +125,13 @@ class Ring:
 		steps_per_rotation  = 200 * 16   #For the stepper motor; 16 microsteps
 		motor_gear_teeth    = 30
 		ring_gear_teeth     = 125
-		self.ring_direction = -1  # -1 since positive steps make it go CCW
+
+		#Set to -1 if positive E commands make the ring go clockwise
+		self.rot_mul        = 1  # 1 since positive steps make it go CCW
 
 		#How many motor steps per degree?
-		self.esteps_degree = int((steps_per_rotation *
-			self.ring_gear_teeth / self.motor_gear_teeth) / 360)
+		self.esteps_degree = int(
+			steps_per_rotation * ring_gear_teeth / motor_gear_teeth / 360)
 
 
 	x = property(**attrhelper('center.x'))
@@ -143,11 +146,11 @@ class Ring:
 	def gcode_preamble(self) -> GCLines:
 		"""Return any code that should go in the preamble of a .gcode file."""
 		return GCLines([
-			GCline(code='T1', comment='Switch to ring extruder'),
+			GCLine(code='T1', comment='Switch to ring extruder'),
 			GCLine(code='M302', args={'P1':1}, comment='Disable cold extrusion prevention'),
 			GCLine(code='M92', args=dict(T=1, E=self.esteps_degree),
 				comment='Set steps per degree of ring rotation'),
-			GCline(code='T0', comment='Switch back to default extruder'),
+			GCLine(code='T0', comment='Switch back to default extruder'),
 		])
 
 
@@ -161,7 +164,7 @@ class Ring:
 
 
 	@angle.setter
-	def angle(self, new_pos:radians):
+	def angle(self, new_pos:degrees):
 		self.set_angle(new_pos)
 
 
@@ -170,7 +173,7 @@ class Ring:
 		return self.angle2point(self.angle)
 
 
-	def set_angle(self, new_angle:radians, direction=None):
+	def set_angle(self, new_angle:degrees, direction=None):
 		"""Set a new angle for the ring. Optionally provide a preferred movement
 		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
 		self.initial_angle = self._angle
@@ -187,7 +190,7 @@ class Ring:
 		)
 
 
-	def angle2point(self, angle:radians):
+	def angle2point(self, angle:degrees):
 		"""Return an x,y,z=0 location on the ring based on the given angle, without
 		moving the ring. Assumes that the bed's bottom-left corner is (0,0).
 		Doesn't take into account a machine that uses bed movement for the y-axis,
@@ -199,27 +202,28 @@ class Ring:
 		)
 
 
-	def gcode_move(self):
-		"""Return the gcode necessary to move the ring from its starting angle
+	def gcode_move(self, lineno_start):
+		"""Return the gcode necessary to move the ring from its current angle
 		to its requested one."""
 		#Were there any changes in angle?
 		if self.angle == self.initial_angle:
-			return
+			return []
 
-		#TODO: generate movement code here; by default move the minimum angle
-		# Take care of 0 crossing: 10 <-> -10
-		# and 360 crossing:        10 <->  350
-		if ((dest - source + 360) % 360 < 180)
-		  # ccw
-		else:
-		  # cw
+		#Find "extrusion" amount - requires M92 has set steps/degree correctly
+		dist = self.angle - self.initial_angle
+		dir_mul = -1 if ((dist+360)%360 < 180) else 1  #Determine CW/CCW rotation
+		extrude = self.rot_mul * dist * dir_mul
 
-		gc = GCLines([
-			GCline(code='T1', comment='Switch to ring extruder'),
-			GCLine(code='G1', args=dict(E=
-				comment=f'Ring move from {degrees(self.initial_angle)} to {degrees(self.angle)}')
-			GCline(code='T0', comment='Switch back to default extruder'),
+		gc = ([
+			GCLine(code='T1', comment='Switch to ring extruder'),
+			GCLine(code='M82', comment='Set relative extrusion mode'),
+			GCLine(code='G1', args={'E':extrude, 'F':8000},
+				comment=f'Ring move from {degrees(self.initial_angle)} to {degrees(self.angle)}'),
 		])
+
+		#Manufacture bogus fractional line numbers for display
+		for i,line in enumerate(gc):
+			line.lineno = lineno_start + (i+1)/len(gc)
 		self._angle = self.initial_angle
 		return gc
 
@@ -305,6 +309,10 @@ class Printer:
 
 		self._anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
+		#Default states
+		self.extruder_no = GCLine(code='T0', args={})
+		self.extrusion_mode = GCLine(code='M82', args={})
+
 
 	x = property(**attrhelper('_x'))
 	y = property(**attrhelper('_y'))
@@ -327,10 +335,11 @@ class Printer:
 
 	def changed(self, attr, old_value, new_value):
 		rprint(f'Printer.{attr} changed from {old_value} to {new_value}')
-		setattr(self.ring, attr[1])
-		if attr[1] in 'xy':
-			#Move the ring to keep the thread intersecting the anchor
-			self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
+		if attr[1] in 'xyz':
+			setattr(self.ring, attr[1])
+			if attr[1] in 'xy':
+				#Move the ring to keep the thread intersecting the anchor
+				self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
 
 
 	def freeze_state(self):
@@ -343,14 +352,29 @@ class Printer:
 		Use them to generate gcode for the ring to maintain the thread
 		trajectory."""
 		gc = []
-		gc.append(self.ring.gcode())
 
+		#Variables to be restored, in the order they should be restored
+		save_vars = 'extruder_no', 'extrusion_mode'
+
+		#"Execute" each line of gcode. If a line is a xymove, Printer.changed()
+		# will be called, which in turn will assign a new relative location to the
+		# Ring, then call Printer.thread_intersect to move the ring to maintain the
+		# intersection between the thread and the target.
 		for line in lines:
 			self.execute_gcode(line)
-			gc.append()
+			gc.append(line)
+			with Restore(self, save_vars) as r:
+				for rline in self.ring.gcode_move(line.lineno):
+					self.execute_gcode(rline)
+					gc.append(rline)
+			for var in save_vars:
+				if var in r.changed:
+					self.execute_gcode(r.saved[var])
+					gc.append(r.saved[var])
 
 		#filter gc to drop None values
-		return filter(None, gc)
+		return gc
+		#return list(filter(None, gc))
 
 
 	def execute_gcode(self, gcline:GCLine):
@@ -358,6 +382,10 @@ class Printer:
 		if gcline.is_xymove():
 			self.x = gcline.args['X']
 			self.y = gcline.args['Y']
+		elif gcline.code in ['M82', 'M83']:
+			self.extrusion_mode = gcline
+		elif gcline.code and gcline.code[0] == 'T':
+			self.extruder_no = gcline
 
 
 	def thread(self) -> Segment:

@@ -18,10 +18,6 @@ class GCLine:
 		self.comment = comment
 		self.empty   = False
 
-		if (args or code) and (not (args and code)):
-			raise ValueError("Both code and args must be specified: got\n"
-			"{}, {} for line\n{}".format(code, args, line))
-
 		#Comment-only or empty line
 		if not self.code and self.line in ('', ';'):
 			self.empty = True

@@ -1,29 +1,36 @@
-G0/G1   Rapid/Controlled Movement
-G20     Set units to inch
-G21     Set units to mm
-G28     Home
-G4      Dwell / Wait
-G90     Absolute Positioning (relative to machine origin)
-G91     Relative Positioning (relative to last position)
-G92     Set software position to value (no motion)
-M0      Stops everything after buffer is empty
-M104    Set extruder temperature (not waiting)
-M105    Get a temperature report
-M106    Set Fan Speed to S and start
-M107    Turn Fan off (or use M106 S0)
-M109    Set extruder temperature (waits till reached) 
-M112    Emergency Stop (Stop immediately)
-M116    Wait for ALL temperatures
-M140    Set heated bed temperature to S (not waiting)
-M17     Enable all stepper motors
-M190    Set heated bed temperature to S (waits till reached)
-M204    Set default acceleration
-M205		X/Y/Z/E: Set max jerk
-				B:       Set min segment time (µs)
-				S/T:     Set min feedrate for print (S)/travel (T) moves
-				J:       Set junction deviation
-M400    Wait for current moves to finish
-M82     Set extruder to absolute mode
-M83     Set extruder to relative mode
-M84     Stop idle hold (do not use while printing)
+--- G ---
+G  0    Rapid movement
+G  4    Dwell / Wait
+G 11    Controlled (extruding) movement
+G 20    Set units to inch
+G 21    Set units to mm
+G 28    Home
+G 90    Absolute Positioning (relative to machine origin)
+G 91    Relative Positioning (relative to last position)
+G 92    Set software position to value (no motion)
+
+--- M ---
+M   0   Stops everything after buffer is empty
+M  17   Enable all stepper motors
+M  82   Set extruder to absolute mode
+M  83   Set extruder to relative mode
+M  84   Stop idle hold (do not use while printing)
+M  92   Set steps per unit
+M 104   Set extruder temperature (not waiting)
+M 105   Get a temperature report
+M 106   Set Fan Speed to S and start
+M 107   Turn Fan off (or use M106 S0)
+M 109   Set extruder temperature (waits till reached) 
+M 112   Emergency Stop (Stop immediately)
+M 116   Wait for ALL temperatures
+M 140   Set heated bed temperature to S (not waiting)
+M 190   Set heated bed temperature to S (waits till reached)
+M 204   Set default acceleration
+M 205		X/Y/Z/E: Set max jerk
+   			B:       Set min segment time (µs)
+   			S/T:     Set min feedrate for print (S)/travel (T) moves
+   			J:       Set junction deviation
+M 400   Wait for current moves to finish
+
+--- T ---
 T       Select extruder no. (starts with 0)
