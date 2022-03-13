@@ -68,7 +68,7 @@ t = Threader(g)
 
 # %%
 stepsobj49 = t.route_layer(thread_geom, g.layers[49])
-#stepsobj49.plot()
+stepsobj49.plot()
 
 # %%
 gc = stepsobj49.gcode()

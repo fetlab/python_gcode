@@ -140,7 +140,7 @@ class Ring:
 
 
 	def __repr__(self):
-		return f'Ring({degrees(self._angle):.2f}°)'
+		return f'Ring({degrees(self._angle):.2f}°, {self.center})'
 
 
 	def gcode_preamble(self) -> GCLines:
@@ -226,6 +226,7 @@ class Ring:
 
 
 	def plot(self, fig, style=None):
+		rprint('Plot', self)
 		fig.add_shape(
 			name='ring',
 			type='circle',
@@ -333,7 +334,7 @@ class Printer:
 	def attr_changed(self, attr, old_value, new_value):
 		rprint(f'Printer.{attr} changed from {old_value} to {new_value}')
 		if attr[1] in 'xyz':
-			setattr(self.ring, attr[1])
+			setattr(self.ring, attr[1], new_value)
 			if attr[1] in 'xy':
 				#Move the ring to keep the thread intersecting the anchor
 				self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
@@ -742,6 +743,19 @@ class Threader:
 			with steps.new_step('Thread not in layer') as s:
 				s.add(layer.lines)
 			return steps
+
+		"""TODO: I think this needs to change to:
+			1. Find all geometry that won't be intersected by thread
+			2. Move thread out of the way
+			3. Print that geometry
+			4. For each segment, for each anchor:
+				A. Find all geometry that prints over the thread for that
+					anchor/segment combo
+				B. For each of those segments, calculate the ring angles for the bed at
+					the start and end of the movement code
+				C. Add to the Segment's gc_lines the correct code to move the ring so
+					that the thread stays where it's supposed to be
+		"""
 
 		rprint(f'{len(thread)} thread segments in this layer:\n\t{thread}')
 		for i,thread_seg in enumerate(thread):
