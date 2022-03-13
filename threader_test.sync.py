@@ -46,7 +46,7 @@ def page_wide():
 	"""))
 
 
-import threader, geometry_helpers, gcode, gcline, tlayer
+import threader, geometry_helpers, gcode, gcline, tlayer, util
 from parsers import cura4
 from threader import TLayer, Threader, GCodeException
 page_wide()

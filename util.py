@@ -70,8 +70,8 @@ def timing(f):
 
 class Restore:
 	def __init__(self, obj, vars):
-		self._saved = {v: getattr(obj, v) for v in vars}
-		self._obj = obj
+		self.saved = {v: getattr(obj, v) for v in vars}
+		self.obj = obj
 		self.changed = {}
 
 	def __enter__(self):
@@ -80,8 +80,29 @@ class Restore:
 	def __exit__(self, exc_type, value, tb):
 		if exc_type is not None:
 			return False
-		for var,oldval in self._saved.items():
-			newval = getattr(self._obj, var)
+		for var,oldval in self.saved.items():
+			newval = getattr(self.obj, var)
 			if newval != oldval:
 				self.changed[var] = newval
-			setattr(self._obj, var, oldval)
+			setattr(self.obj, var, oldval)
+
+
+
+class Saver:
+	"""Save values for variables in save_vars that have changed."""
+	def __init__(self, obj, save_vars):
+		self.saved = {v: getattr(obj, v) for v in save_vars}
+		self.obj = obj
+		self.changed = {}
+
+	def __enter__(self):
+		return self
+
+	def __exit__(self, exc_type, value, tb):
+		if exc_type is not None:
+			return False
+		for var,oldval in self.saved.items():
+			newval = getattr(self.obj, var)
+			if newval != oldval:
+				print(f'{var}: {oldval} -> {newval}')
+				self.changed[var] = newval

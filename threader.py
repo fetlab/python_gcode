@@ -8,7 +8,7 @@ from fastcore.basics import store_attr
 from math import atan2
 from tlayer import TLayer
 from gcline import GCLine, GCLines
-from util import Restore
+from util import Saver
 
 from rich.console import Console
 rprint = Console(style="on #272727").print
@@ -154,7 +154,7 @@ class Ring:
 		])
 
 
-	def changed(self, attr, old_value, new_value):
+	def attr_changed(self, attr, old_value, new_value):
 		rprint(f'Ring.{attr} changed from {old_value} to {new_value}')
 
 
@@ -202,7 +202,7 @@ class Ring:
 		)
 
 
-	def gcode_move(self, lineno_start):
+	def gcode_move(self):
 		"""Return the gcode necessary to move the ring from its current angle
 		to its requested one."""
 		#Were there any changes in angle?
@@ -221,9 +221,6 @@ class Ring:
 				comment=f'Ring move from {degrees(self.initial_angle)} to {degrees(self.angle)}'),
 		])
 
-		#Manufacture bogus fractional line numbers for display
-		for i,line in enumerate(gc):
-			line.lineno = lineno_start + (i+1)/len(gc)
 		self._angle = self.initial_angle
 		return gc
 
@@ -333,7 +330,7 @@ class Printer:
 		self._anchor = new_anchor
 
 
-	def changed(self, attr, old_value, new_value):
+	def attr_changed(self, attr, old_value, new_value):
 		rprint(f'Printer.{attr} changed from {old_value} to {new_value}')
 		if attr[1] in 'xyz':
 			setattr(self.ring, attr[1])
@@ -363,17 +360,27 @@ class Printer:
 		for line in lines:
 			self.execute_gcode(line)
 			gc.append(line)
-			with Restore(self, save_vars) as r:
-				for rline in self.ring.gcode_move(line.lineno):
-					self.execute_gcode(rline)
-					gc.append(rline)
-			for var in save_vars:
-				if var in r.changed:
-					self.execute_gcode(r.saved[var])
-					gc.append(r.saved[var])
 
-		#filter gc to drop None values
+			if line.is_xymove():
+				newlines = []
+				with Saver(self, save_vars) as saver:
+					for rline in self.ring.gcode_move():
+						self.execute_gcode(rline)
+						newlines.append(rline)
+
+				saved = [saver.saved[var] for var in save_vars if var in saver.changed]
+				for oldline in saved:
+					self.execute_gcode(oldline)
+					newlines.append(oldline)
+
+				#Manufacture bogus fractional line numbers for display
+				for i,l in enumerate(newlines):
+					l.lineno = line.lineno + (i+1)/len(newlines)
+
+				gc.extend(newlines)
+
 		return gc
+		#filter gc to drop None values
 		#return list(filter(None, gc))
 
 
