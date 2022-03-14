@@ -23,6 +23,7 @@ import pickle
 from importlib import reload
 import plotly.graph_objects as go
 from IPython.core.display import display, HTML
+import plotly
 from plotly.offline import init_notebook_mode
 init_notebook_mode(connected=True)
 #suppress scientific notation
@@ -110,13 +111,6 @@ stepsobj60 = t.route_layer(thread_geom, g.layers[60])
 stepsobj60.plot()
 
 # %%
-import threader, geometry_helpers, parsers.cura4
-import plotly
-reload(parsers.cura4)
-reload(geometry_helpers)
-reload(threader)
-from threader import TLayer, Threader
-
 g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
 		layer_class=TLayer)
 
@@ -181,3 +175,21 @@ layer; why is there a step 6?
 from rich.console import Console
 blue_console = Console(style="on #272727")
 blue_console.print("I'm blue. Da ba dee da ba di. 123 {stuff}")
+
+# %%
+import kaleido
+
+# %%
+fig = go.Figure()
+g.layers[49].plot(fig, only_outline=False)
+fig.update_layout(
+		yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
+)
+fig.update_scenes(
+		camera=dict(
+			projection={'type': 'orthographic'},
+			# eye={'x': 0, 'y': 1, 'z': 0},
+		),
+)
+fig.show('notebook')
+fig.write_image('/tmp/slice49.svg')
