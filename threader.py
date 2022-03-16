@@ -396,10 +396,9 @@ class Printer:
 			self.extruder_no = gcline
 
 
-	def thread(self) -> Segment:
+	def anchor_to_ring(self) -> Segment:
 		"""Return a Segment representing the current thread, from the anchor point
 		to the ring."""
-		#TODO: account for bed location (y axis)
 		return GSegment(self.anchor, self.ring.point)
 
 
@@ -413,7 +412,7 @@ class Printer:
 			here is just to exhaustively test.
 		"""
 		#First check to see if we have intersections at all; if not, we're done!
-		thr = self.thread()
+		thr = self.anchor_to_ring()
 		if not any(thr.intersection(i) for i in avoid):
 			return
 
@@ -432,10 +431,11 @@ class Printer:
 		return None
 
 
-	def thread_intersect(self, target, set_new_anchor=True, move_ring=True):
-		"""Rotate the ring so that the thread intersects the target Point. By default
-		sets the anchor to the intersection. Return the rotation value."""
-		anchor = self.anchor.as2d()
+	def thread_intersect(self, target, anchor=None, set_new_anchor=True, move_ring=True):
+		"""Rotate the ring so that the thread starting at anchor intersects the
+		target Point. By default sets the anchor to the intersection. Return the
+		rotation value."""
+		anchor = anchor or self.anchor.as2d()
 		#Form a half line (basically a ray) from the anchor through the target
 		hl = HalfLine(anchor, target.as2d())
 		rprint(f'HalfLine from {self.anchor} to {target}:\n', hl)
@@ -463,7 +463,7 @@ class Printer:
 
 	def plot_thread_to_ring(self, fig, style=None):
 		#Plot a thread from the current anchor to the carrier
-		fig.add_trace(go.Scatter(**segs_xy(self.thread(),
+		fig.add_trace(go.Scatter(**segs_xy(self.anchor_to_ring(),
 			name='thread', **self.style['thread'])))
 		update_figure(fig, 'thread', style)
 
@@ -756,8 +756,23 @@ class Threader:
 				C. Add to the Segment's gc_lines the correct code to move the ring so
 					that the thread stays where it's supposed to be
 		"""
-
 		rprint(f'{len(thread)} thread segments in this layer:\n\t{thread}')
+		#Pre-intersect all thread segments
+		for seg in thread:
+			#TODO: figure out what anchors to use for each subsequent segment ->
+			# should I do this in flatten_thread? I think so...
+			layer.intersect_model(thread)
+
+		#Find geometry that will not be intersected by any segments
+		# TODO: these need to be half-lines from each anchor to the ring
+		to_print = layer.non_intersecting(thread)
+
+		with steps.new_step(f'Move thread to avoid {len(to_print)} lines of non-intersecting geometry'):
+			self.printer.thread_avoid(to_print)
+
+		with steps.new_step('Print non-intersecting geometry') as s:
+			s.add(to_print)
+
 		for i,thread_seg in enumerate(thread):
 			anchors = layer.anchors(thread_seg)
 			self.printer.layer = layer
@@ -765,7 +780,7 @@ class Threader:
 			with steps.new_step(f'Move thread to overlap anchor at {anchors[0]}') as s:
 				self.printer.thread_intersect(anchors[0])
 
-			traj = self.printer.thread().set_z(layer.z)
+			traj = self.printer.anchor_to_ring().set_z(layer.z)
 
 			msg = (f'Print segments not overlapping thread trajectory {traj}',
 						 f'or {len(thread[i:])} remaining thread segments')

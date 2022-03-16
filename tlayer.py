@@ -108,9 +108,10 @@ class TLayer(Cura4Layer):
 
 
 	def flatten_thread(self, thread: List[Segment]) -> List[GSegment]:
-		"""Return the input thread "flattened" to have the same z-height as the
-		layer, clipped to the top/bottom layer planes, and with resulting segments
-		that are on the same line combined."""
+		"""Process the input thread:
+			* Clip it to the top/bottom of the layer (the layer height)
+			* Flatten in-layer segments to have the same z-height as the layer
+			* Combine resulting segments that are on the same line into a single segment"""
 		self.add_geometry()
 
 		top = self.geometry.planes.top
@@ -217,5 +218,4 @@ class TLayer(Cura4Layer):
 
 		self.model_isecs[tseg] = isecs
 
-
-
+		return self.model_isecs[tseg]
