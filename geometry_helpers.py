@@ -101,36 +101,6 @@ def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 
 	return preamble, segments, extra
 
-#Monkey-patch Point
-@patch
-def __repr__(self:Point):
-	return "{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
-@patch
-def as2d(self:Point):
-	return Point(self.x, self.y, 0)
-@patch
-def xyz(self:Point):
-	return self.x, self.y, self.z
-@patch
-def xy(self:Point):
-	return self.x, self.y
-
-
-#Monkey-patch Segment
-@patch
-def __repr__(self:Segment):
-	return "<{}↔︎{}>".format(self.start_point, self.end_point)
-@patch
-def as2d(self:Segment):
-	return GSegment(self.start_point.as2d(), self.end_point.as2d())
-@patch
-def xyz(self:Segment):
-	x, y, z = tuple(zip(self.start_point.xyz(), self.end_point.xyz()))
-	return dict(x=x, y=y, z=z)
-@patch
-def xy(self:Segment):
-	x, y = tuple(zip(self.start_point.xy(), self.end_point.xy()))
-	return dict(x=x, y=y)
 
 
 
@@ -151,11 +121,6 @@ class HalfLine(Geometry3D.HalfLine):
 
 	def __repr__(self):
 		return "H({}, {})".format(self.point, self.vector)
-
-
-@patch
-def __repr__(self:Vector):
-	return "V({:.2f}, {:.2f}, {:.2f})".format(*self._v)
 
 
 
@@ -199,8 +164,6 @@ class GPoint(Point):
 		test_seg = GSegment(self.as2d(), (0,0,0))
 		return len([s for s in seglist if intersection(test_seg, s.as_2d())]) % 2
 
-#Patch Point to also have a inside() method
-Point.inside = GPoint.inside
 
 
 class GSegment(Geometry3D.Segment):
@@ -277,3 +240,44 @@ class GSegment(Geometry3D.Segment):
 		self.end_point.z = z
 		self.line = Geometry3D.Line(self.start_point, self.end_point)
 		return self
+
+
+# ------- Monkey patching for improved Geometry3D objects ------
+
+# --- Point
+@patch
+def __repr__(self:Point):
+	return "{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
+@patch
+def as2d(self:Point):
+	return Point(self.x, self.y, 0)
+@patch
+def xyz(self:Point):
+	return self.x, self.y, self.z
+@patch
+def xy(self:Point):
+	return self.x, self.y
+Point.inside = GPoint.inside
+
+
+# --- Segment
+@patch
+def __repr__(self:Segment):
+	return "<{}←→{}>".format(self.start_point, self.end_point)
+@patch
+def as2d(self:Segment):
+	return GSegment(self.start_point.as2d(), self.end_point.as2d())
+@patch
+def xyz(self:Segment):
+	x, y, z = tuple(zip(self.start_point.xyz(), self.end_point.xyz()))
+	return dict(x=x, y=y, z=z)
+@patch
+def xy(self:Segment):
+	x, y = tuple(zip(self.start_point.xy(), self.end_point.xy()))
+	return dict(x=x, y=y)
+
+
+# --- Vector
+@patch
+def __repr__(self:Vector):
+	return "V({:.2f}, {:.2f}, {:.2f})".format(*self._v)
