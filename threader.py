@@ -305,7 +305,7 @@ class Printer:
 		self.bed  = Bed()
 		self.ring = Ring(center=GPoint(110, 110, z))
 
-		self._anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
+		self.anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
 		#Default states
 		self.extruder_no = GCLine(code='T0', args={})
@@ -321,14 +321,6 @@ class Printer:
 		return f'Printer({self.bed}, {self.ring})'
 
 
-	@property
-	def anchor(self):
-		"""Return the current anchor, adjusted for the bed position."""
-		return self._anchor
-
-	@anchor.setter
-	def anchor(self, new_anchor):
-		self._anchor = new_anchor
 
 
 	def attr_changed(self, attr, old_value, new_value):
