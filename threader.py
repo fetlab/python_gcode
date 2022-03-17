@@ -226,7 +226,6 @@ class Ring:
 
 
 	def plot(self, fig, style=None):
-		rprint('Plot', self)
 		fig.add_shape(
 			name='ring',
 			type='circle',
