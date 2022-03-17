@@ -321,8 +321,6 @@ class Printer:
 		return f'Printer({self.bed}, {self.ring})'
 
 
-
-
 	def attr_changed(self, attr, old_value, new_value):
 		rprint(f'Printer.{attr} changed from {old_value} to {new_value}')
 		if attr[1] in 'xyz':
@@ -538,6 +536,7 @@ class Step:
 
 
 	def add(self, layer:TLayer, gcsegs:List[GSegment]):
+		#TODO: layer argument not used
 		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs')
 		for seg in gcsegs:
 			if not seg.printed:
@@ -749,11 +748,9 @@ class Threader:
 					that the thread stays where it's supposed to be
 		"""
 		rprint(f'{len(thread)} thread segments in this layer:\n\t{thread}')
-		#Pre-intersect all thread segments
-		for seg in thread:
-			#TODO: figure out what anchors to use for each subsequent segment ->
-			# should I do this in flatten_thread? I think so...
-			layer.intersect_model(thread)
+
+		#Snap thread to anchors
+		thread = layer.anchor_snap(thread)
 
 		#Find geometry that will not be intersected by any segments
 		# TODO: these need to be half-lines from each anchor to the ring
@@ -763,7 +760,7 @@ class Threader:
 			self.printer.thread_avoid(to_print)
 
 		with steps.new_step('Print non-intersecting geometry') as s:
-			s.add(to_print)
+			s.add(layer, to_print)
 
 		for i,thread_seg in enumerate(thread):
 			anchors = layer.anchors(thread_seg)
