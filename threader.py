@@ -771,18 +771,19 @@ class Threader:
 				self.printer.thread_intersect(anchor)
 
 			traj = self.printer.anchor_to_ring().set_z(layer.z)
+			layer.intersect_model(traj)
+			to_print = [s for s in layer.non_intersecting(thread[i:] + [traj]) if not s.printed]
+			if to_print:
+				msg = (f'Print {len(to_print)} segments not overlapping thread trajectory {traj}',
+							 f'or the {len(thread[i:])} remaining thread segments')
+				with steps.new_step(*msg) as s:
+					rprint(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
+					s.add(layer, layer.non_intersecting(thread[i:] + [traj]))
 
-			msg = (f'Print segments not overlapping thread trajectory {traj}',
-						 f'or {len(thread[i:])} remaining thread segments')
-			with steps.new_step(*msg) as s:
-				layer.intersect_model(traj)
-				rprint(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
-				s.add(layer, layer.non_intersecting(thread[i:] + [traj]))
-
-			if len(layer.intersecting(thread_seg)) > 0:
-				with steps.new_step('Print', len(layer.intersecting(thread_seg)),
-						'overlapping layers segments') as s:
-					s.add(layer, layer.intersecting(thread_seg))
+			to_print = [s for s in layer.intersecting(thread_seg) if not s.printed]
+			if to_print:
+				with steps.new_step(f'Print {len(to_print)} overlapping layers segments') as s:
+					s.add(layer, to_print)
 
 		remaining = [s for s in layer.geometry.segments if not s.printed]
 		if remaining:
