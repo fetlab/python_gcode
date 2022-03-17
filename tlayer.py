@@ -1,6 +1,6 @@
 import plotly, plotly.graph_objects as go
 from Geometry3D import Segment, Point, Plane, distance
-from geometry_helpers import GSegment, Geometry, Planes, seg_combine, gcode2segments
+from geometry_helpers import GSegment, Geometry, Planes, seg_combine, gcode2segments, HalfLine
 from typing import List
 from itertools import cycle
 from parsers.cura4 import Cura4Layer
@@ -140,15 +140,38 @@ class TLayer(Cura4Layer):
 		segs = seg_combine(segs)
 
 		#Cache intersections
-		for seg in segs:
-			self.intersect_model(seg)
+		# self.intersect_model(segs)
 
 		return segs
+
+
+	def anchor_snap(self, thread: List[Segment]) -> List[GSegment]:
+		"""Return a new list of thread segments, modified as follows:
+			* Each segment end point is moved to its closest intersection with
+				printed layer geometry
+			* Each segment start point (except the first segment's) is moved to the
+				end point of the preceding segment
+		"""
+		end = None
+		newthread = []
+
+		for tseg in thread:
+			if end: tseg = tseg.copy(start_point=end)
+			hl = HalfLine(tseg.start_point, tseg.end_point)
+			self.intersect_model([hl])
+			isecs = self.model_isecs[hl]['isec_points']
+			end = sorted(isecs, key=lambda p:distance(tseg.end_point, p))[0]
+			tseg = tseg.copy(end_point=end)
+			newthread.append(tseg)
+
+		return newthread
 
 
 	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
 		"""Return a list of GSegments which the given thread segments do not
 		intersect."""
+		self.intersect_model(thread)
+
 		#First find all *intersecting* GSegments
 		intersecting = set.union(*[set(self.model_isecs[tseg]['isec_segs']) for tseg in thread])
 
