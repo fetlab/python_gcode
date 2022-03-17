@@ -68,13 +68,15 @@ t = Threader(g)
 
 # %%
 stepsobj49 = t.route_layer(thread_geom, g.layers[49])
+
+# %%
 stepsobj49.plot()
 
 # %%
-stepsobj49.steps[1].gcsegs[0]
+stepsobj49.steps[2].printer.ring.gcode_move()
 
 # %%
-stepsobj49.steps[1].gcsegs[0].gc_lines
+stepsobj49.steps[2].printer.ring.initial_angle
 
 # %%
 gc = stepsobj49.gcode()
