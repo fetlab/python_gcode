@@ -125,24 +125,35 @@ class HalfLine(Geometry3D.HalfLine):
 
 
 class GPoint(Point):
-	def __init__(self, *args, z=0):
+	def __init__(self, *args, **kwargs):
 		"""Pass Geometry3D.Point arguments or a gcline.GCLine and optionally a *z*
 		argument. If *z* is missing it will be set to 0."""
-		if len(args) == 1 and isinstance(args[0], GCLine):
-			l = args[0]
-			if not (l.code in ('G0', 'G1') and 'X' in l.args and 'Y' in l.args):
-				raise ValueError(f"GCLine instance isn't an X or Y move:\n\t{args[0]}")
-			super().__init__(l.args['X'], l.args['Y'], z)
-			self.line = l
+		self.line = None
+		z = kwargs.get('z', 0)
+
+		if len(args) == 1:
+			if isinstance(args[0], GCLine):
+				l = args[0]
+				if not (l.code in ('G0', 'G1') and 'X' in l.args and 'Y' in l.args):
+					raise ValueError(f"GCLine instance isn't an X or Y move:\n\t{args[0]}")
+				super().__init__(l.args['X'], l.args['Y'], z)
+				self.line = l
+
+			elif isinstance(args[0], (list,tuple)):
+				super().__init__(args[0])
+
+			elif isinstance(args[0], GPoint):
+				super().__init__(
+					kwargs.get('x', args[0].x),
+					kwargs.get('y', args[0].y),
+					kwargs.get('z', args[0].z))
+
+		elif len(args) == 2:
+			super().__init__(*args)
+
 		elif len(args) == 3:
 			super().__init__(*args)
-			self.line = None
-		elif len(args) == 2:
-			if isinstance(args[0], Point):
-				super().__init__(args[0].x, args[0].y, z)
-			else:
-				super().__init__(*args, z)
-			self.line = None
+
 		else:
 			raise ValueError(f"Can't init GPoint with args {args}")
 
@@ -167,7 +178,7 @@ class GPoint(Point):
 
 
 class GSegment(Geometry3D.Segment):
-	def __init__(self, a, b, z=0, gc_lines=None, is_extrude=False):
+	def __init__(self, a, b, z=None, gc_lines=None, is_extrude=False, **kwargs):
 		#Label whether this is an extrusion move or not
 		self.is_extrude = is_extrude
 
@@ -180,6 +191,20 @@ class GSegment(Geometry3D.Segment):
 		#Save *all* lines of gcode involved in this segment
 		self.gc_lines = GCLines(gc_lines) or GCLines()
 
+		#Instantiate a copy
+		if isinstance(a, GSegment):
+			if b is not None:
+				raise ValueError('Second argument must be None when first is a GSegment')
+			if not ('start_point' in kwargs or 'end_point' in kwargs):
+				raise ValueError('Provide explicit start_point and/or end_point argument')
+			copyseg = a
+			a = kwargs.get('start_point', copyseg.start_point)
+			b = kwargs.get('end_point', copyseg.end_point)
+			z = a.z if z is None else z
+			gc_lines = copyseg.gc_lines if gc_lines is None else gc_lines
+			is_extrude = copyseg.is_extrude or is_extrude
+
+
 		if isinstance(a, Point):
 			point1 = a
 		elif isinstance(a, GCLine):
@@ -189,6 +214,7 @@ class GSegment(Geometry3D.Segment):
 		elif isinstance(a, (tuple,list)):
 			point1 = GPoint(*a)
 		else:
+			print(a, type(a), type(a) == GSegment)
 			raise ValueError(f"Arg a is type {type(a)} = {a} but that's not supported!")
 
 		if isinstance(b, Point):
@@ -240,6 +266,13 @@ class GSegment(Geometry3D.Segment):
 		self.end_point.z = z
 		self.line = Geometry3D.Line(self.start_point, self.end_point)
 		return self
+
+
+	def copy(self, start_point=None, end_point=None, z=None):
+		return GSegment(self, None,
+			start_point=start_point or self.start_point,
+			end_point=end_point     or self.end_point)
+
 
 
 # ------- Monkey patching for improved Geometry3D objects ------
