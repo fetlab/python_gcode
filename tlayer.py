@@ -208,9 +208,9 @@ class TLayer(Cura4Layer):
 		return sorted(anchors, key=lambda p:distance(tseg.end_point, p))
 
 
-	def intersect_model(self, tseg: GSegment):
-		"""Given a thread segment, return all of the intersections with the model's
-		printed lines of gcode. Returns
+	def intersect_model(self, segs):
+		"""Given a list of thread segments, calculate all of the intersections with the model's
+		printed lines of gcode. Caches in self.model_isecs:
 			nsec_segs, isec_segs, isec_points
 		where
 			nsec_segs is non-intersecting GCLines
@@ -219,26 +219,27 @@ class TLayer(Cura4Layer):
 		"""
 		self.add_geometry()
 
-		#Caching
-		if tseg in self.model_isecs:
-			return self.model_isecs[tseg]
+		for tseg in segs:
+			if tseg in self.model_isecs:
+				continue
 
-		isecs = {
-			'nsec_segs': [],                      # Non-intersecting gcode segments
-			'isec_segs': [],   'isec_points': [], # Intersecting gcode segments and locations
-		}
+			isecs = {
+				'nsec_segs': [],                    # Non-intersecting gcode segments
+				'isec_segs': [], 'isec_points': [], # Intersecting gcode segments and locations
+			}
 
-		for gcseg in self.geometry.segments:
-			if not gcseg.is_extrude: continue
-			if not hasattr(gcseg, 'printed'):
-				gcseg.printed = False
-			inter = gcseg.intersection(tseg)
-			if inter:
-				isecs['isec_segs'  ].append(gcseg)
-				isecs['isec_points'].append(inter)
-			else:
-				isecs['nsec_segs'].append(gcseg)
+			for gcseg in self.geometry.segments:
+				if not gcseg.is_extrude: continue
 
-		self.model_isecs[tseg] = isecs
+				#TODO: why is this here?
+				# if not hasattr(gcseg, 'printed'):
+				# 	gcseg.printed = False
 
-		return self.model_isecs[tseg]
+				inter = gcseg.intersection(tseg)
+				if inter:
+					isecs['isec_segs'  ].append(gcseg)
+					isecs['isec_points'].append(inter)
+				else:
+					isecs['nsec_segs'].append(gcseg)
+
+			self.model_isecs[tseg] = isecs
