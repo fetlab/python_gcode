@@ -308,8 +308,8 @@ class Printer:
 		self.anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
 		#Default states
-		self.extruder_no = GCLine(code='T0', args={})
-		self.extrusion_mode = GCLine(code='M82', args={})
+		self.extruder_no    = GCLine(code='T0',  args={}, comment='Switch to main extruder')
+		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode')
 
 
 	x = property(**attrhelper('_x'))
@@ -322,6 +322,7 @@ class Printer:
 
 
 	def attr_changed(self, attr, old_value, new_value):
+		return
 		if attr[1] in 'xyz':
 			setattr(self.ring, attr[1], new_value)
 			if attr[1] in 'xy':
@@ -494,8 +495,25 @@ class Step:
 		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
 		and .gc_line2 member which are GCLines.
 		"""
-		gcode = GCLines()
+		gcode = []
+
 		if not self.gcsegs:
+			if self.printer.ring.initial_angle != self.printer.ring.angle:
+				#Variables to be restored, in the order they should be restored
+				save_vars = 'extruder_no', 'extrusion_mode'
+
+				newlines = []
+				with Saver(self.printer, save_vars) as saver:
+					for rline in self.printer.ring.gcode_move():
+						self.printer.execute_gcode(rline)
+						newlines.append(rline)
+
+				saved = [saver.saved[var] for var in save_vars if var in saver.changed]
+				for oldline in saved:
+					self.printer.execute_gcode(oldline)
+					newlines.append(oldline)
+
+				gcode.extend(newlines)
 			return gcode
 
 		#Sort gcsegs by the first gcode line number in each
@@ -531,6 +549,10 @@ class Step:
 
 		#And any extra attached to the layer
 		gcode.extend(self.layer.postamble)
+
+		#"Execute" the gcode so we can keep up with the printer state
+		for line in gcode:
+			self.printer.execute_gcode(line)
 
 		return gcode
 
@@ -613,8 +635,12 @@ class Steps:
 		r = GCLines()
 		for i,step in enumerate(self.steps):
 			g = step.gcode()
-			# r.append(GCLine(lineno=(g.first.lineno - .5) if g else 0,
-			# 	comment=f'Step {i} ({len(g)} lines) ---------------------------')
+			g.insert(0, GCLine(lineno=r.last.lineno+.5 if r else 0.5,
+				comment=f'Step {i} ({len(g)} lines) ---------------------------'))
+			if g[1:] and not isinstance(g[1].lineno, (int,float)):
+				last = r.last.lineno if r else 0
+				for i,l in enumerate(g[1:]):
+					l.lineno = last + (i+1)/len(g[1:])
 			r.extend(g)
 		return r
 

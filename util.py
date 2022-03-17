@@ -99,10 +99,15 @@ class Saver:
 		return self
 
 	def __exit__(self, exc_type, value, tb):
+		print('Saver exit')
 		if exc_type is not None:
 			return False
 		for var,oldval in self.saved.items():
 			newval = getattr(self.obj, var)
 			if newval != oldval:
-				print(f'{var}: {oldval} -> {newval}')
 				self.changed[var] = newval
+
+	def __repr__(self):
+		return('\n'.join([
+				f'{var}: {val} -> {self.changed.get(var, "")}'
+				for var,val in self.saved.items()]))

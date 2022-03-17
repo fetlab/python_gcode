@@ -55,7 +55,7 @@ class GCLine:
 
 
 	def __hash__(self):
-		return hash(f'{self.lineno} {self.line}')
+		return hash(('GCLine', self.lineno, self.construct()))
 
 
 	def __eq__(self, other):
@@ -85,7 +85,7 @@ class GCLine:
 		"""Return a copy of this line without extrusion, turning it into a G0."""
 		if not self.is_xymove():
 			raise ValueError(f'Call of as_xymove() on non-xymove GCLine {self}')
-		c = copy(self)
+		c = GCLine(self.construct(), lineno=self.lineno)
 		if 'E' in c.args:
 			del(c.args['E'])
 		c.code = 'G0'
@@ -242,6 +242,9 @@ class GCLines(UserList):
 		test = GCLine.is_xyextrude if is_extrude else GCLine.is_xymove
 		return next(filter(test, reversed(self.data)), None)
 
+
+	def construct(self):
+		return '\n'.join([l.construct() for l in self])
 
 
 

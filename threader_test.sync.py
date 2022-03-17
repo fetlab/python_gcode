@@ -73,17 +73,29 @@ stepsobj49 = t.route_layer(thread_geom, g.layers[49])
 stepsobj49.plot()
 
 # %%
-stepsobj49.steps[2].printer.ring.gcode_move()
+fig = go.Figure()
+stepsobj49.steps[5].plot_gcsegments(fig)
+fig.update_layout(template='plotly_dark',# autosize=False,
+		yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
+		margin=dict(l=0, r=20, b=0, t=40, pad=0),
+		showlegend=False,)
+
+fig.show('notebook')
 
 # %%
-stepsobj49.steps[2].printer.ring.initial_angle
+stepsobj49.steps[5].gcsegs[-1].gc_lines[14922]
+
+# %%
+g.lines[14920:14925]
+
+# %%
+stepsobj49.steps[2].printer.ring.initial_angle, stepsobj49.steps[2].printer.ring.angle
 
 # %%
 gc = stepsobj49.gcode()
-gc
+with open('/tmp/l49.gcode', 'w') as f:
+	f.write(gc.construct())
 
-# %%
-stepsobj49.printer.gcode(gc)
 
 # %%
 g.layers[49]
