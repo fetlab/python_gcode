@@ -766,8 +766,9 @@ class Threader:
 			anchors = layer.anchors(thread_seg)
 			self.printer.layer = layer
 			self.printer.thread_seg = thread_seg
-			with steps.new_step(f'Move thread to overlap anchor at {anchors[0]}') as s:
-				self.printer.thread_intersect(anchors[0])
+			anchor = thread_seg.end_point
+			with steps.new_step(f'Move thread to overlap anchor at {anchor}') as s:
+				self.printer.thread_intersect(anchor)
 
 			traj = self.printer.anchor_to_ring().set_z(layer.z)
 
