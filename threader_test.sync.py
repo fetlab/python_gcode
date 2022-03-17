@@ -15,12 +15,10 @@
 # %%
 #turn off autosave since we sync from vim
 # %autosave 0
-import gcode
 import numpy as np
-from Geometry3D import Point
+from Geometry3D import Point, distance, HalfLine
 #from danutil import unpickle
 import pickle
-from importlib import reload
 import plotly.graph_objects as go
 from IPython.core.display import display, HTML
 import plotly
@@ -56,6 +54,7 @@ page_wide()
 # %load_ext autoreload
 # %autoreload 2
 # %aimport -rich
+# %aimport -Geometry3D
 
 # %%
 thread_file = '/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle'
@@ -88,20 +87,6 @@ sorted(ogc[set(gc._index.keys()).difference(ogc._index.keys())])
 # %%
 stepsobj49.steps[1].gcsegs[-1].gc_lines
 
-
-# %%
-g.layers[49].postamble
-
-# %%
-gcsegs = sort_48._indexed(stepsobj49.steps[1].gcsegs, key=lambda s:s.gc_lines.first)
-for s1, s2 in zip(gcsegs[:-1], gcsegs[1:]):
-	if s2.gc_lines.first.lineno - s1.gc_lines.last.lineno > 1:
-		missing = slice(s1.gc_lines.last.lineno+1, s2.gc_lines.first.lineno)
-		print(f'[yellow] {s1.gc_lines.last}\n',
-		'\n'.join(map(repr,g.layers[49].lines[missing])),
-		f'\n[yellow] {s2.gc_lines.first}', end='\n\n')
-
-
 # %%
 stepsobj50 = t.route_layer(thread_geom, g.layers[50])
 stepsobj50.plot(g.layers[49])
@@ -111,13 +96,32 @@ stepsobj60 = t.route_layer(thread_geom, g.layers[60])
 stepsobj60.plot()
 
 # %%
-g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode',
-		layer_class=TLayer)
-
 fig = go.Figure()
-for i in range(48,51):
-	g.layers[i].plot(fig, ['green'], ['green'], plot3d=True)
+layer = g.layers[49]
+layer.plot(fig, ['green'], ['green'], only_outline=False)
 
+thread = layer.flatten_thread(thread_geom)
+layer.intersect_model(thread)
+
+fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(*thread,
+	marker_size=8,
+	line=dict(color='red', dash='dot', width=4))))
+
+newthread = layer.anchor_snap(thread)
+
+fig.add_trace(go.Scatter(**geometry_helpers.segs_xy(*newthread,
+	marker=dict(color='lightblue', size=8),
+	line=dict(color='yellow', dash='dot', width=1))))
+
+fig.update_layout(template='plotly_dark',# autosize=False,
+		yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
+		margin=dict(l=0, r=20, b=0, t=40, pad=0),
+		showlegend=False,
+)
+
+fig.show('notebook')
+
+# %%
 for seg, color in zip(thread_geom, plotly.colors.qualitative.Set2):
 	fig.add_trace(go.Scatter3d(**geometry_helpers.segs_xyz(seg, mode='lines',
 		line=dict(color=color, dash='dot', width=4))))
@@ -136,48 +140,6 @@ fig.update_scenes(
 
 fig.show('notebook')
 
-# %%
-for layer in g.layers:
-	layer.add_geometry()
-	if layer.geometry.planes.bottom.z <= thread_geom[0].end_point.z <= layer.geometry.planes.top.z:
-		print(layer)
-		print(layer.geometry.planes.bottom, layer.geometry.planes.top)
-
-# %%
-g.layers[49].anchors(thread_geom[-3])
-
-# %%
-for tseg in g.layers[49]._isecs:
-	print(tseg)
-	print(g.layers[49]._isecs[tseg]['isec_segs'])
-	print('-----')
-
-	#81.89, 115.797 -> 84.661, 113.026
-
-# %%
-"""
-For layer 49 at z = 10
-Segments:
- 0. ( 50.14,  74.74, -0.00), ( 83.34, 114.49,  9.97)
- 1. ( 83.34, 114.49,  9.97), (147.50, 114.49,  9.97)
- 2. (147.50, 114.49,  9.97), (159.14, 114.49, 16.69) -> exits layer
- 3. (159.14, 114.49, 16.69), (159.05, 128.12, 61.18)
-
-Anchor at step 2 for seg 0 is ( 83.27, 114.42)
-Anchor at step 4 for seg 1 is (143.13, 114.49)
-Anchor at step 6 for seg 2 is (154.48, 114.49)
-
-TODO next: find out what's happening with segment 2 and its exit from the
-layer; why is there a step 6?
-"""
-
-# %%
-from rich.console import Console
-blue_console = Console(style="on #272727")
-blue_console.print("I'm blue. Da ba dee da ba di. 123 {stuff}")
-
-# %%
-import kaleido
 
 # %%
 fig = go.Figure()
