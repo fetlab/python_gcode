@@ -71,10 +71,21 @@ stepsobj49 = t.route_layer(thread_geom, g.layers[49])
 stepsobj49.plot()
 
 # %%
+stepsobj49.steps[1].gcsegs[0]
+
+# %%
+stepsobj49.steps[1].gcsegs[0].gc_lines
+
+# %%
 gc = stepsobj49.gcode()
+gc
 
 # %%
 stepsobj49.printer.gcode(gc)
+
+# %%
+g.layers[49]
+
 
 # %%
 list(_)

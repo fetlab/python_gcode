@@ -114,6 +114,7 @@ class Ring:
 		'indicator': {'line': dict(color='blue',  width= 4)},
 	}
 
+	#TODO: add y-offset between printer's x-axis and ring's x-axis
 	def __init__(self, radius=110, angle=0, center:GPoint=None):
 		self.radius        = radius
 		self._angle        = angle
@@ -321,7 +322,6 @@ class Printer:
 
 
 	def attr_changed(self, attr, old_value, new_value):
-		rprint(f'Printer.{attr} changed from {old_value} to {new_value}')
 		if attr[1] in 'xyz':
 			setattr(self.ring, attr[1], new_value)
 			if attr[1] in 'xy':
@@ -343,7 +343,7 @@ class Printer:
 		#Variables to be restored, in the order they should be restored
 		save_vars = 'extruder_no', 'extrusion_mode'
 
-		#"Execute" each line of gcode. If a line is a xymove, Printer.changed()
+		#"Execute" each line of gcode. If a line is a xymove, Printer.attr_changed()
 		# will be called, which in turn will assign a new relative location to the
 		# Ring, then call Printer.thread_intersect to move the ring to maintain the
 		# intersection between the thread and the target.
@@ -497,7 +497,7 @@ class Step:
 		if not self.gcsegs:
 			return gcode
 
-		#Sort gcsegs by line number
+		#Sort gcsegs by the first gcode line number in each
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
 
 		#Find breaks in line numbers between gc_lines for two adjacent segments
@@ -734,25 +734,13 @@ class Threader:
 				s.add(layer.lines)
 			return steps
 
-		"""TODO: I think this needs to change to:
-			1. Find all geometry that won't be intersected by thread
-			2. Move thread out of the way
-			3. Print that geometry
-			4. For each segment, for each anchor:
-				A. Find all geometry that prints over the thread for that
-					anchor/segment combo
-				B. For each of those segments, calculate the ring angles for the bed at
-					the start and end of the movement code
-				C. Add to the Segment's gc_lines the correct code to move the ring so
-					that the thread stays where it's supposed to be
-		"""
-		rprint(f'{len(thread)} thread segments in this layer:\n\t{thread}')
-
 		#Snap thread to anchors
 		thread = layer.anchor_snap(thread)
 
+		rprint(f'{len(thread)} thread segments in this layer:\n\t{thread}')
+
 		#Find geometry that will not be intersected by any segments
-		# TODO: these need to be half-lines from each anchor to the ring
+		# TODO: do these need to be half-lines from each anchor to the ring?
 		to_print = layer.non_intersecting(thread)
 
 		with steps.new_step(f'Move thread to avoid {len(to_print)} lines of non-intersecting geometry'):
