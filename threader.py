@@ -1,7 +1,7 @@
 import plotly.graph_objects as go
 from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
-from math import sin, cos, degrees
+from math import sin, cos, degrees, radians
 from typing import List
 from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy
 from fastcore.basics import store_attr
@@ -141,18 +141,18 @@ class Ring:
 
 
 	def __repr__(self):
-		return f'Ring({degrees(self._angle):.2f}°, {self.center})'
+		return f'Ring({self._angle:.2f}°, {self.center})'
 
 
 	def gcode_preamble(self) -> GCLines:
 		"""Return any code that should go in the preamble of a .gcode file."""
-		return GCLines([
+		return [
 			GCLine(code='T1', comment='Switch to ring extruder'),
 			GCLine(code='M302', args={'P1':1}, comment='Disable cold extrusion prevention'),
 			GCLine(code='M92', args=dict(T=1, E=self.esteps_degree),
 				comment='Set steps per degree of ring rotation'),
 			GCLine(code='T0', comment='Switch back to default extruder'),
-		])
+		]
 
 
 	def attr_changed(self, attr, old_value, new_value):
@@ -185,8 +185,8 @@ class Ring:
 	def carrier_location(self, offset=0):
 		"""Used in plotting."""
 		return GPoint(
-			self.center.x + cos(self.angle)*(self.radius+offset),
-			self.center.y + sin(self.angle)*(self.radius+offset),
+			self.center.x + cos(radians(self.angle))*(self.radius+offset),
+			self.center.y + sin(radians(self.angle))*(self.radius+offset),
 			self.center.z
 		)
 
@@ -197,8 +197,8 @@ class Ring:
 		Doesn't take into account a machine that uses bed movement for the y-axis,
 		but just add the y value to the return from this function."""
 		return GPoint(
-			cos(angle) * self.radius + self.center.x,
-			sin(angle) * self.radius + self.center.y,
+			cos(radians(angle)) * self.radius + self.center.x,
+			sin(radians(angle)) * self.radius + self.center.y,
 			self.center.z
 		)
 
@@ -218,8 +218,8 @@ class Ring:
 		gc = ([
 			GCLine(code='T1', comment='Switch to ring extruder'),
 			GCLine(code='M82', comment='Set relative extrusion mode'),
-			GCLine(code='G1', args={'E':extrude, 'F':8000},
-				comment=f'Ring move from {degrees(self.initial_angle)} to {degrees(self.angle)}'),
+			GCLine(code='G1', args={'E':round(extrude,3), 'F':8000},
+				comment=f'Ring move from {self.initial_angle:.2f}° to {self.angle:.2f}°'),
 		])
 
 		self._angle = self.initial_angle
@@ -439,7 +439,8 @@ class Printer:
 				reverse=True)[0]
 
 		#Now we need the angle between center->ring and the x axis
-		ring_angle = atan2(ring_point.y - self.ring.center.y, ring_point.x - self.ring.center.x)
+		ring_angle = degrees(atan2(ring_point.y - self.ring.center.y,
+															 ring_point.x - self.ring.center.x))
 
 		if move_ring:
 			self.ring.set_angle(ring_angle)
@@ -749,8 +750,9 @@ class Threader:
 		with steps.new_step('Print non-intersecting geometry') as s:
 			s.add(layer, to_print)
 
+
+		# --- Individual thread segments
 		for i,thread_seg in enumerate(thread):
-			anchors = layer.anchors(thread_seg)
 			self.printer.layer = layer
 			self.printer.thread_seg = thread_seg
 			anchor = thread_seg.end_point
@@ -772,6 +774,8 @@ class Threader:
 				with steps.new_step(f'Print {len(to_print)} overlapping layers segments') as s:
 					s.add(layer, to_print)
 
+
+		# --- Print what's left
 		remaining = [s for s in layer.geometry.segments if not s.printed]
 		if remaining:
 			with steps.new_step('Move thread to avoid remaining geometry') as s:
