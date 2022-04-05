@@ -12,6 +12,21 @@ from util import Saver
 
 from rich.console import Console
 rprint = Console(style="on #272727").print
+
+# --- Options for specific setups ---
+# What size does the slicer think the bed is?
+effective_bed_size =  79, 220
+
+#Where is the ring center, according to the effective bed coordinate system?
+# Note that the ring will be wider than the bed. I got these coordinates via
+# the Ender 3 CAD model.
+ring_center = 36, 28
+
+#What is the radius of the circle inscribed by the thread outlet from the
+# carrier?
+ring_radius = 92.5
+
+
 """
 Usage notes:
 	* The thread should be anchored on the bed such that it doesn't intersect the
@@ -115,7 +130,7 @@ class Ring:
 	}
 
 	#TODO: add y-offset between printer's x-axis and ring's x-axis
-	def __init__(self, radius=110, angle=0, center:GPoint=None):
+	def __init__(self, radius=100, angle=0, center:GPoint=None):
 		self.radius        = radius
 		self._angle        = angle
 		self.initial_angle = angle
@@ -302,8 +317,8 @@ class Printer:
 
 	def __init__(self, z=0):
 		self._x, self._y, self._z = 0, 0, 0
-		self.bed  = Bed()
-		self.ring = Ring(center=GPoint(110, 110, z))
+		self.bed  = Bed(size=effective_bed_size)
+		self.ring = Ring(radius=ring_radius, center=GPoint(ring_center[0], ring_center[1], z))
 
 		self.anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
