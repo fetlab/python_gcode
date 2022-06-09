@@ -204,7 +204,7 @@ class GSegment(Geometry3D.Segment):
 			gc_lines = copyseg.gc_lines if gc_lines is None else gc_lines
 			is_extrude = copyseg.is_extrude or is_extrude
 
-
+		#If instantiating a copy, now a and b are set from the passed GSegment
 		if isinstance(a, Point):
 			point1 = a
 		elif isinstance(a, GCLine):
@@ -215,7 +215,9 @@ class GSegment(Geometry3D.Segment):
 			point1 = GPoint(*a)
 		else:
 			print(a, type(a), type(a) == GSegment)
-			raise ValueError(f"Arg a is type {type(a)} = {a} but that's not supported!")
+			raise ValueError("Attempt to instantiate a GSegment with argument |a| as "
+					f"type {type(a)}, but only <GSegment>, <Point>, <GCLine>, <tuple> and <list> are supported.\n"
+					" If this occurrs in a Jupyter notebook, it's because reloading messes things up. Try restarting the kernel.")
 
 		if isinstance(b, Point):
 			point2 = b

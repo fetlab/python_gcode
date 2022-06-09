@@ -114,3 +114,59 @@ def parse(gcobj):
 	gcobj.preamble  = preamble
 	gcobj.layers    = layergroups
 	gcobj.postamble = postamble
+
+def parse_3mf(filename):
+	"""Usage:
+		1. Export thread + object as a 3MF file from Fusion.
+		2. Import Fusion 3MF file into Cura. Select thread pipe + object and Group.
+		3. Position where you want it.
+		4. Save as Cura project, then use that file with this function.
+
+		Returns the transform of the grouped object - assumes thread and object
+		have not moved relative to each other.
+
+		The 3MF file seems to use the front-left corner of the bed as origin, which
+		is what we want. This is even though the UI uses the center of the bed as
+		origin. The 0,0 point of the object in the 3MF file seems to be at the
+		center of the bounding box.
+
+		We can test this by setting the xy transform for the object to
+		(bed_width/2 - obj_width/2, bed_height/2 - height/2), which should put the
+		bounding box in the UI at the front-left corner, and the transform in the
+		3MF file then is equal to (roughly?) half the bounding box.
+	"""
+	import zipfile
+	import xml.etree.ElementTree as ET
+	import numpy as np
+	namespace = {
+			"3mf": "http://schemas.microsoft.com/3dmanufacturing/core/2015/02",
+			"m"  : "http://schemas.microsoft.com/3dmanufacturing/material/2015/02"
+	}
+
+	archive = zipfile.ZipFile(filename, "r")
+	root = ET.parse(archive.open("3D/3dmodel.model"))
+	findall = lambda s:root.findall(s, namespace)
+
+	try:
+		creator = root.find("./3mf:metadata[@name='Application']", namespace).text
+		if 'Cura' not in creator:
+			raise ValueError("Not created by Cura")
+	except (AttributeError, ValueError):
+		print("Not a Cura 3MF file")
+		return
+
+	try:
+		return np.fromstring(
+			root.find("./3mf:build/3mf:item", namespace).get('transform'),
+			dtype=float, sep=' ')[-3:]
+		# objs = {obj.get('id'):obj for obj in findall("./3mf:resources/3mf:object")}
+		# trans_objs = (findall("./3mf:resources/3mf:object/3mf:components//") or
+		# 							findall("./3mf:build/3mf:item"))
+		# transforms = [
+		# 	( objs[i.get('objectid')],
+		# 		np.fromstring(i.get('transform'), dtype=float, sep=' ')[-3:]
+		# 	) for i in trans_objs]
+	except Exception as e:
+		print(e)
+		print("Probably means no transforms could be found; here's findall:")
+		return findall

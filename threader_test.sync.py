@@ -58,16 +58,46 @@ page_wide()
 
 # %%
 thread_file = '/Users/dan/r/thread_printer/stl/test1/thread_from_fusion.pickle'
+gcode_file  = '/Users/dan/r/thread_printer/stl/test1/main_body.gcode'
 tpath = np.array(pickle.load(open(thread_file, 'rb'))) * 10
 thread_transform = [131.164, 110.421, 0]
-tpath += [thread_transform, thread_transform]
-
-thread_geom = tuple([geometry_helpers.GSegment(Point(*s), Point(*e)) for s,e in tpath])
-g = gcode.GcodeFile('/Users/dan/r/thread_printer/stl/test1/main_body.gcode', layer_class=TLayer)
-t = Threader(g)
 
 # %%
-stepsobj49 = t.route_layer(thread_geom, g.layers[49])
+#Fusion: smaller complex shape v1
+gcode_file = '/Users/dan/r/thread_printer/stl/test2/smaller_body-cura5.gcode'
+cura_project = '/Users/dan/r/thread_printer/stl/test2/CE3PRO_Smaller complex shape v1-cura5.3mf'
+thread_transform = cura4.parse_3mf(cura_project)
+
+#See thread_from_fusion.py to get thread path
+tpath = [
+	((2.872999322680758, 0.7107702283163996, 1.1465342070626257), (5.104767390732761, 3.345447255476923,  1.1465342070626292)),
+	((5.104767390732761, 3.345447255476923,  1.1465342070626292), (4.82410333149717,  4.9265590648838185, 1.1465342070626292)),
+	((4.82410333149717,  4.9265590648838185, 1.1465342070626292), (2.199011060702335, 5.932879528505399,  4.2056)),
+	((2.199011060702335, 5.932879528505399,  4.2056), (2.199011060702335, 5.932879528505399,  4.7741))
+]
+tpath.insert(0, ((0,0,0), tpath[0][0]))
+tpath = np.array(tpath)
+
+# %%
+tpath += [thread_transform, thread_transform]
+thread_geom = tuple([geometry_helpers.GSegment(Point(*s), Point(*e)) for s,e in tpath])
+g = gcode.GcodeFile(gcode_file, layer_class=TLayer)
+t = Threader(g)
+
+
+# %%
+try:
+	stepsobj49 = t.route_layer(thread_geom, g.layers[49])
+except Exception as ex:
+	#	stepsobj49, ex = e.obj
+	print(f"Excepted: {ex}")
+	raise
+
+# %%
+t.steps.plot()
+
+# %%
+stepsobj49
 
 # %%
 stepsobj49.plot()

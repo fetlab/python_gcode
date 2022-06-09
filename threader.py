@@ -419,6 +419,7 @@ class Printer:
 		#First check to see if we have intersections at all; if not, we're done!
 		thr = self.anchor_to_ring()
 		if not any(thr.intersection(i) for i in avoid):
+			rprint(f"Thread intersects 0 of {len(avoid)} geometry segments")
 			return
 
 		#TODO: this is the computational geometry visibility problem and should be
@@ -433,7 +434,8 @@ class Printer:
 						self.ring.set_angle(ang)
 					return ang
 
-		return None
+		rprint("Couldn't find a way to avoid thread/geometry intersections")
+		return
 
 
 	def thread_intersect(self, target, anchor=None, set_new_anchor=True, move_ring=True):
@@ -493,10 +495,11 @@ class Step:
 		self.printer = steps_obj.printer
 		self.layer   = steps_obj.layer
 		self.gcsegs  = []
+		self.number  = -1
 
 
 	def __repr__(self):
-		return f'<Step ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.printer}'
+		return f'<Step {self.number} ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.printer}'
 
 
 	def gcode(self):
@@ -574,7 +577,7 @@ class Step:
 
 	def add(self, layer:TLayer, gcsegs:List[GSegment]):
 		#TODO: layer argument not used
-		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs')
+		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs to Step')
 		for seg in gcsegs:
 			if not seg.printed:
 				self.gcsegs.append(seg)
@@ -582,7 +585,6 @@ class Step:
 
 
 	def __enter__(self):
-		rprint(f'[bold white on red]Start:[/] [light_sea_green italic]{self.name}')
 		return self
 
 
@@ -642,6 +644,8 @@ class Steps:
 
 	def new_step(self, *messages):
 		self.steps.append(Step(self, ' '.join(map(str,messages))))
+		self.current.number = len(self.steps)
+		rprint(f'[light_sea_green italic]{self.current}')
 		return self.current
 
 
@@ -764,7 +768,9 @@ class Threader:
 			rprint(f'\t{i}. {tseg}')
 
 		self.printer.z = layer.z
-		steps = Steps(layer=layer, printer=self.printer)
+
+		self.steps = Steps(layer=layer, printer=self.printer)
+		steps = self.steps
 
 		#Get the thread segments to work on
 		thread = layer.flatten_thread(thread_list)
@@ -773,7 +779,7 @@ class Threader:
 		if not thread:
 			rprint('Thread not in layer at all')
 			with steps.new_step('Thread not in layer') as s:
-				s.add(layer.lines)
+				s.add(layer, layer.lines)
 			return steps
 
 		#Snap thread to anchors
@@ -785,49 +791,55 @@ class Threader:
 		# TODO: do these need to be half-lines from each anchor to the ring?
 		to_print = layer.non_intersecting(thread)
 
-		with steps.new_step(f'Move thread to avoid {len(to_print)} lines of non-intersecting geometry'):
-			self.printer.thread_avoid(to_print)
+		try:
 
-		with steps.new_step('Print non-intersecting geometry') as s:
-			s.add(layer, to_print)
+			with steps.new_step(f'Move thread to avoid {len(to_print)} lines of non-intersecting geometry'):
+				self.printer.thread_avoid(to_print)
 
-
-		# --- Individual thread segments
-		for i,thread_seg in enumerate(thread):
-			self.printer.layer = layer
-			self.printer.thread_seg = thread_seg
-			anchor = thread_seg.end_point
-			with steps.new_step(f'Move thread to overlap anchor at {anchor}') as s:
-				self.printer.thread_intersect(anchor)
-
-			traj = self.printer.anchor_to_ring().set_z(layer.z)
-			layer.intersect_model(traj)
-			to_print = [s for s in layer.non_intersecting(thread[i:] + [traj]) if not s.printed]
-			if to_print:
-				msg = (f'Print {len(to_print)} segments not overlapping thread trajectory {traj}',
-							 f'or the {len(thread[i:])} remaining thread segments')
-				with steps.new_step(*msg) as s:
-					rprint(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
-					s.add(layer, layer.non_intersecting(thread[i:] + [traj]))
-
-			to_print = [s for s in layer.intersecting(thread_seg) if not s.printed]
-			if to_print:
-				with steps.new_step(f'Print {len(to_print)} overlapping layers segments') as s:
-					s.add(layer, to_print)
+			with steps.new_step('Print non-intersecting geometry') as s:
+				s.add(layer, to_print)
 
 
-		# --- Print what's left
-		remaining = [s for s in layer.geometry.segments if not s.printed]
-		if remaining:
-			with steps.new_step('Move thread to avoid remaining geometry') as s:
-				self.printer.thread_avoid(remaining)
+			# --- Individual thread segments
+			for i,thread_seg in enumerate(thread):
+				self.printer.layer = layer
+				self.printer.thread_seg = thread_seg
+				anchor = thread_seg.end_point
+				with steps.new_step(f'Move thread to overlap anchor at {anchor}') as s:
+					self.printer.thread_intersect(anchor)
 
-			with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
-				s.add(layer, remaining)
+				traj = self.printer.anchor_to_ring().set_z(layer.z)
+				layer.intersect_model(traj)
+				to_print = [s for s in layer.non_intersecting(thread[i:] + [traj]) if not s.printed]
+				if to_print:
+					msg = (f'Print {len(to_print)} segments not overlapping thread trajectory {traj}',
+								 f'or the {len(thread[i:])} remaining thread segments')
+					with steps.new_step(*msg) as s:
+						rprint(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
+						s.add(layer, layer.non_intersecting(thread[i:] + [traj]))
 
-		rprint('[yellow]Done with thread for this layer[/];',
-				len([s for s in layer.geometry.segments if not s.printed]),
-				'gcode lines left')
+				to_print = [s for s in layer.intersecting(thread_seg) if not s.printed]
+				if to_print:
+					with steps.new_step(f'Print {len(to_print)} overlapping layers segments') as s:
+						s.add(layer, to_print)
+
+
+			# --- Print what's left
+			remaining = [s for s in layer.geometry.segments if not s.printed]
+			if remaining:
+				with steps.new_step('Move thread to avoid remaining geometry') as s:
+					self.printer.thread_avoid(remaining)
+
+				with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
+					s.add(layer, remaining)
+
+			rprint('[yellow]Done with thread for this layer[/];',
+					len([s for s in layer.geometry.segments if not s.printed]),
+					'gcode lines left')
+
+		except Exception as e:
+			raise GCodeException((steps, e), "There was a problem")
+
 
 		return steps
 
