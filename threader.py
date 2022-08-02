@@ -26,7 +26,6 @@ ring_center = 36, 28
 # carrier?
 ring_radius = 92.5
 
-
 """
 Usage notes:
 	* The thread should be anchored on the bed such that it doesn't intersect the
@@ -98,7 +97,6 @@ def update_figure(fig, name, style, what='traces'):
 	"""
 	if style and name in style:
 		getattr(fig, f'update_{what}')(selector={'name':name}, **style[name])
-
 
 
 class GCodeException(Exception):
@@ -327,6 +325,8 @@ class Printer:
 		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode')
 
 
+
+	#Create attributes which call Printer.attr_changed on change
 	x = property(**attrhelper('_x'))
 	y = property(**attrhelper('_y'))
 	z = property(**attrhelper('_z'))
@@ -443,6 +443,10 @@ class Printer:
 		target Point. By default sets the anchor to the intersection. Return the
 		rotation value."""
 		anchor = anchor or self.anchor.as2d()
+		# if target.as2d() == anchor.as2d():
+		# 	rprint('thread_intersect with target == anchor, doing nothing')
+		# 	return self.ring.angle
+
 		#Form a half line (basically a ray) from the anchor through the target
 		hl = HalfLine(anchor, target.as2d())
 		rprint(f'HalfLine from {self.anchor} to {target}:\n', hl)
@@ -839,7 +843,6 @@ class Threader:
 
 		except Exception as e:
 			raise GCodeException((steps, e), "There was a problem")
-
 
 		return steps
 
