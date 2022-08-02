@@ -11,7 +11,7 @@ from gcline import GCLine, GCLines
 from util import Saver
 
 from rich.console import Console
-rprint = Console(style="on #272727").print
+rprint = Console(style="on #272727", force_jupyter=True).print
 
 # --- Options for specific setups ---
 # What size does the slicer think the bed is?
