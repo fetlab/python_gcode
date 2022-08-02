@@ -135,6 +135,9 @@ def parse_3mf(filename):
 		bounding box in the UI at the front-left corner, and the transform in the
 		3MF file then is equal to (roughly?) half the bounding box.
 	"""
+	#TODO: need to parse the 3MF to find the bounding box of the joined shapes,
+	# then subtract half the z bounding box from the z transform, since it works
+	# by the center of the object.
 	import zipfile
 	import xml.etree.ElementTree as ET
 	import numpy as np
@@ -154,6 +157,14 @@ def parse_3mf(filename):
 	except (AttributeError, ValueError):
 		print("Not a Cura 3MF file")
 		return
+
+	mins = [float( 'inf')]*3
+	maxs = [float('-inf')]*3
+	for vertex in findall("./3mf:resources/3mf:object/3mf:mesh/3mf:vertices/3mf:vertex"):
+		vals = map(float, [v.get(a) for v in 'xyz'])
+		mins = [min(old, new) for old, new in zip(mins, vals)]
+		maxs = [max(old, new) for old, new in zip(maxs, vals)]
+
 
 	try:
 		return np.fromstring(

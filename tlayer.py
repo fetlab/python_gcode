@@ -17,15 +17,18 @@ class TLayer(Cura4Layer):
 		self.postamble    = []
 
 
-	def plot(self, fig,
+	def plot(self, fig=None,
 			move_colors:List=plotly.colors.qualitative.Set2,
 			extrude_colors:List=plotly.colors.qualitative.Dark2,
-			plot3d=False, only_outline=True):
+			plot3d=False, only_outline=True, show=False):
 		"""Plot the geometry making up this layer. Set only_outline to True to
 		print only the outline of the gcode in the layer .
 		"""
 		self.add_geometry()
 		colors = cycle(zip(extrude_colors, move_colors))
+
+		if fig is None:
+			fig = go.Figure()
 
 		for gcline, part in self.parts.items():
 			if only_outline and 'wall-outer' not in gcline.line.lower():
@@ -66,6 +69,16 @@ class TLayer(Cura4Layer):
 				fig.add_trace(scatter(**Msegs, mode='lines',
 					name='Mx'+(repr(gcline).lower()),
 					line=dict(color=colorL, dash='dot', **lineprops), **plotprops))
+
+		if show:
+			fig.update_layout(template='plotly_dark',# autosize=False,
+					yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
+					margin=dict(l=0, r=20, b=0, t=0, pad=0),
+					showlegend=False,)
+			fig.show('notebook')
+
+		return fig
+
 
 
 	def add_geometry(self):
@@ -129,9 +142,9 @@ class TLayer(Cura4Layer):
 			if s := tseg.intersection(bot): self.in_out.append(s)
 			if e := tseg.intersection(top): self.in_out.append(e)
 			segs.append(GSegment(s or tseg.start_point, e or tseg.end_point))
-			if s or e:
-				print(f'Crop {tseg} to\n'
-						  f'     {segs[-1]}')
+			# if s or e:
+			# 	print(f'Crop {tseg} to\n'
+			# 			  f'     {segs[-1]}')
 
 			#Flatten segment to the layer's z-height
 			segs[-1].set_z(self.z)
@@ -161,6 +174,11 @@ class TLayer(Cura4Layer):
 			self.intersect_model([hl])
 			isecs = self.model_isecs[hl]['isec_points']
 			end = sorted(isecs, key=lambda p:distance(tseg.end_point, p))[0]
+
+			#Not enough distance to intersect anything else
+			if end == tseg.start_point:
+				continue
+
 			tseg = tseg.copy(end_point=end)
 			newthread.append(tseg)
 
@@ -184,7 +202,7 @@ class TLayer(Cura4Layer):
 
 	def intersecting(self, tseg: GSegment) -> List[GSegment]:
 		"""Return a list of GSegments which the given thread segment intersects."""
-		return self.model_isecs[tseg]['isec_segs']
+		return set(self.model_isecs[tseg]['isec_segs'])
 
 
 	def anchors(self, tseg: Segment) -> List[Point]:
@@ -230,10 +248,6 @@ class TLayer(Cura4Layer):
 
 			for gcseg in self.geometry.segments:
 				if not gcseg.is_extrude: continue
-
-				#TODO: why is this here?
-				# if not hasattr(gcseg, 'printed'):
-				# 	gcseg.printed = False
 
 				inter = gcseg.intersection(tseg)
 				if inter:

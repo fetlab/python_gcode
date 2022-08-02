@@ -314,7 +314,7 @@ class Printer:
 	}
 
 	def __init__(self, z=0):
-		self._x, self._y, self._z = 0, 0, 0
+		self._x, self._y, self._z = 0, 0, z
 		self.bed  = Bed(size=effective_bed_size)
 		self.ring = Ring(radius=ring_radius, center=GPoint(ring_center[0], ring_center[1], z))
 
@@ -324,6 +324,7 @@ class Printer:
 		self.extruder_no    = GCLine(code='T0',  args={}, comment='Switch to main extruder')
 		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode')
 
+		self.thread_seg = None
 
 
 	#Create attributes which call Printer.attr_changed on change
@@ -348,6 +349,22 @@ class Printer:
 	def freeze_state(self):
 		"""Return a copy of this Printer object, capturing the state."""
 		return deepcopy(self)
+
+		bed = Bed(self.bed.anchor, self.bed.size)
+		bed.x, bed.y = self.bed.x, self.bed.y
+
+		ring = Ring(self.ring.radius, self.ring.angle, self.ring.center)
+
+		printer = Printer(self.z)
+		printer.bed = bed
+		printer.ring = ring
+		printer.anchor = self.anchor
+		printer.thread_seg = self.thread_seg
+		printer.extruder_no = self.extruder_no
+		printer.extrusion_mode = self.extrusion_mode
+		printer._x, printer._y, printer._z = self._x, self._y, self._z
+
+		return printer
 
 
 	def gcode(self, lines):
@@ -419,7 +436,7 @@ class Printer:
 		#First check to see if we have intersections at all; if not, we're done!
 		thr = self.anchor_to_ring()
 		if not any(thr.intersection(i) for i in avoid):
-			rprint(f"Thread intersects 0 of {len(avoid)} geometry segments")
+			rprint(f"Thread intersects 0 of {len(avoid)} geometry segments, don't need to move ring")
 			return
 
 		#TODO: this is the computational geometry visibility problem and should be
@@ -579,13 +596,14 @@ class Step:
 		return gcode
 
 
-	def add(self, layer:TLayer, gcsegs:List[GSegment]):
+	def add(self, gcsegs:List[GSegment]):
 		#TODO: layer argument not used
-		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} segs to Step')
+		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} unprinted gcsegs to Step')
 		for seg in gcsegs:
 			if not seg.printed:
 				self.gcsegs.append(seg)
 				seg.printed = True
+		rprint(f'Added {len(self.gcsegs)} segments')
 
 
 	def __enter__(self):
@@ -594,6 +612,7 @@ class Step:
 
 	def __exit__(self, exc_type, value, traceback):
 		if exc_type is not None:
+			rprint(f'Exception on Step.__exit__: {exc_type}')
 			return False
 		#Otherwise store the current state
 		self.printer = self.printer.freeze_state()
@@ -649,7 +668,7 @@ class Steps:
 	def new_step(self, *messages):
 		self.steps.append(Step(self, ' '.join(map(str,messages))))
 		self.current.number = len(self.steps)
-		rprint(f'[light_sea_green italic]{self.current}')
+		rprint(f'\n[light_sea_green italic]{self.current}')
 		return self.current
 
 
@@ -668,11 +687,15 @@ class Steps:
 		return r
 
 
-	def plot(self, prev_layer:TLayer=None):
-		steps = self.steps
-		last_anchor = steps[0].printer.anchor
+	def plot(self, prev_layer:TLayer=None, stepnum=None):
+		plot_stepnum = stepnum
+		steps        = self.steps
+		last_anchor  = steps[0].printer.anchor
 
 		for stepnum,step in enumerate(steps):
+			if plot_stepnum is not None and stepnum != plot_stepnum:
+				continue
+
 			rprint(f'Step {stepnum}: {step.name}')
 			fig = go.Figure()
 
@@ -718,8 +741,8 @@ class Steps:
 			last_anchor = step.printer.anchor
 
 			#Plot anchor/enter/exit points if any
+			step.printer.plot_anchor(fig)
 			if thread_seg := getattr(step.printer, 'thread_seg', None):
-				step.printer.plot_anchor(fig)
 
 				if enter := getattr(thread_seg.start_point, 'in_out', None):
 					if enter.inside(step.printer.layer.geometry.outline):
@@ -771,61 +794,114 @@ class Threader:
 		for i, tseg in enumerate(thread_list):
 			rprint(f'\t{i}. {tseg}')
 
-		self.printer.z = layer.z
+		self.printer.layer = layer
+		self.printer.z     = layer.z
 
 		self.steps = Steps(layer=layer, printer=self.printer)
 		steps = self.steps
 
+		thread = thread_list.copy()
+
+		#Add bed anchor -> start point if not there already
+		if thread[0].start_point != self.printer.bed.anchor:
+			thread.insert(0, GSegment(self.printer.bed.anchor, thread[0].start_point))
+
 		#Get the thread segments to work on
-		thread = layer.flatten_thread(thread_list)
-		steps.flat_thread = thread
+		thread = layer.flatten_thread(thread)
+
+		self.printer.layer.thread = thread
+
+		rprint('\nFlattened thread:')
+		for i, tseg in enumerate(thread):
+			rprint(f'\t{i}. {tseg} ({tseg.length():.2f} mm)')
+
+		#Collect segments that involve extrusion
+		extrude_segs = [gcseg for gcseg in layer.geometry.segments if gcseg.is_extrude]
 
 		if not thread:
 			rprint('Thread not in layer at all')
 			with steps.new_step('Thread not in layer') as s:
-				s.add(layer, layer.lines)
+				s.add(extrude_segs)
 			return steps
 
 		#Snap thread to anchors
 		thread = layer.anchor_snap(thread)
 
-		rprint(f'{len(thread)} thread segments in this layer:\n\t{thread}')
+		rprint(f'\n{len(thread)} thread segments in this layer:')
+		for i, tseg in enumerate(thread):
+			rprint(f'\t{i}. {tseg} ({tseg.length():.2f} mm)')
+
+		rprint('[yellow]————[/] Start [yellow]————[/]')
 
 		#Find geometry that will not be intersected by any segments
 		# TODO: do these need to be half-lines from each anchor to the ring?
 		to_print = layer.non_intersecting(thread)
 
 		try:
-
-			with steps.new_step(f'Move thread to avoid {len(to_print)} lines of non-intersecting geometry'):
+			with steps.new_step(f'Move thread to avoid {len(to_print)}/{len(extrude_segs)} segments of non-intersecting geometry'):
 				self.printer.thread_avoid(to_print)
 
 			with steps.new_step('Print non-intersecting geometry') as s:
-				s.add(layer, to_print)
+				s.add(to_print)
 
+			segs_left = [s for s in extrude_segs if not s.printed]
+			rprint(f"{len(segs_left)} non-printed segments left from {len(extrude_segs)} original segments")
+
+			rprint(f"[red]———[/] Now process {len(thread)} thread segments [red]———[/]")
+			self.debug_threads = []
 
 			# --- Individual thread segments
 			for i,thread_seg in enumerate(thread):
-				self.printer.layer = layer
+				rprint(f'[yellow]————[/] Thread {i}: {thread_seg} [yellow]————[/]')
+
+				segs_left = [s for s in segs_left if not s.printed]
+
 				self.printer.thread_seg = thread_seg
 				anchor = thread_seg.end_point
+
 				with steps.new_step(f'Move thread to overlap anchor at {anchor}') as s:
 					self.printer.thread_intersect(anchor)
 
 				traj = self.printer.anchor_to_ring().set_z(layer.z)
 				layer.intersect_model(traj)
-				to_print = [s for s in layer.non_intersecting(thread[i:] + [traj]) if not s.printed]
+
+				#-----
+
+				non_isec = layer.non_intersecting(thread[i:] + [traj]).intersection(segs_left)
+				isec = layer.intersecting(thread_seg).intersection(segs_left)
+
+				rprint(f"{len(non_isec)}/{len(segs_left)} unprinted segments "
+						"that don't intersect (anchor→ring trajectory + remaining thread segments)")
+				rprint(f"{len(isec)}/{len(segs_left)} unprinted segments that intersect "
+						"current thread segment")
+
+				self.non_isec = non_isec
+				self.segs_left = segs_left
+
+				#-----
+
+				to_print = non_isec
+
+				# to_print = [s for s in layer.non_intersecting(thread[i:] + [traj]) if not s.printed]
 				if to_print:
 					msg = (f'Print {len(to_print)} segments not overlapping thread trajectory {traj}',
 								 f'or the {len(thread[i:])} remaining thread segments')
 					with steps.new_step(*msg) as s:
-						rprint(len(layer.non_intersecting(thread[i:] + [traj])), 'non-intersecting')
-						s.add(layer, layer.non_intersecting(thread[i:] + [traj]))
+						s.add(to_print)
+				else:
+					rprint(f"{i}: Nothing not intersecting thread to print")
+					self.debug_threads.append(('not intersecting', i, thread[i:], traj,
+						deepcopy(layer.model_isecs)))
 
 				to_print = [s for s in layer.intersecting(thread_seg) if not s.printed]
 				if to_print:
 					with steps.new_step(f'Print {len(to_print)} overlapping layers segments') as s:
-						s.add(layer, to_print)
+						s.add(to_print)
+					rprint(to_print)
+				else:
+					rprint(f"{i}: Nothing intersecting thread to print")
+					self.debug_threads.append(('intersecting', i, thread_seg,
+						deepcopy(layer.model_isecs)))
 
 
 			# --- Print what's left
@@ -835,7 +911,7 @@ class Threader:
 					self.printer.thread_avoid(remaining)
 
 				with steps.new_step(f'Print {len(remaining)} remaining geometry lines') as s:
-					s.add(layer, remaining)
+					s.add(remaining)
 
 			rprint('[yellow]Done with thread for this layer[/];',
 					len([s for s in layer.geometry.segments if not s.printed]),

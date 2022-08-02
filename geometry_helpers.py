@@ -231,7 +231,8 @@ class GSegment(Geometry3D.Segment):
 			raise ValueError(f"Arg b is type {type(b)} = {b} but that's not supported!")
 
 		if point1 == point2:
-			raise ValueError("Cannot initialize a Segment with two identical Points")
+			raise ValueError("Cannot initialize a Segment with two identical Points\n"
+					f"Init args: a={a}, b={b}, z={z}")
 
 		self.line = Geometry3D.Line(point1, point2)
 		self.start_point = point1
@@ -244,7 +245,8 @@ class GSegment(Geometry3D.Segment):
 	def __repr__(self):
 		if not(self.gc_line1 and self.gc_line2):
 			return super().__repr__()
-		return "<S[{}] {}:{}←→{}:{}>".format(
+		return "<{}[{}] {}:{}←→{}:{}>".format(
+				'S' if self.printed else 's',
 				len(self.gc_lines),
 				self.gc_line1.lineno, self.start_point,
 				self.gc_line2.lineno, self.end_point)
