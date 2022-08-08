@@ -3,7 +3,7 @@ from Geometry3D import Segment, Point, Plane, distance
 from geometry_helpers import GSegment, Geometry, Planes, seg_combine, gcode2segments, HalfLine
 from typing import List
 from itertools import cycle
-from parsers.cura4 import Cura4Layer
+from cura4layer import Cura4Layer
 
 class TLayer(Cura4Layer):
 	"""A gcode layer that has thread in it."""
