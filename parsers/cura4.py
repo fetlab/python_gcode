@@ -1,6 +1,5 @@
 import re
 from gcline import GCLine
-from gclayer import Layer
 from util import listsplit
 
 class GCodeException(Exception):
@@ -34,24 +33,6 @@ class GCodeException(Exception):
 #   ;TYPE:SKIRT
 
 __name__ = "Cura4"
-
-class Cura4Layer(Layer):
-	"""A Layer, but using the comments in the Cura gcode to add additional useful
-	members:
-		Layer.meshes -> a list of sub-meshes to be found in this layer
-			each containing
-				.features -> a dict of lines by feature type
-
-	Cura Gcode as of 4.12.1 has the same pattern every layer except layer 0.
-	"""
-	def __init__(self, lines=[], layernum=None):
-		super().__init__(lines, layernum)
-		parts = listsplit(lines,
-				lambda l: l.line.startswith(';TYPE:') or l.line.startswith(';MESH'),
-				keepsep='>', minsize=1)
-		self.parts = {lines[0]: lines for lines in parts}
-
-
 
 def detect(lines):
 	return any('Cura_SteamEngine' in l for l in lines[:20])
@@ -102,6 +83,16 @@ def parse(gcobj):
 		except (StopIteration, AttributeError) as e:
 			raise GCodeException(layer,
 					f"Couldn't find ';LAYER' comment in layer {i+1} (lines {layer.lines.first().lineno} - {layer.lines.last().lineno})") from e
+
+	#For each layer, find the starting absolute extrusion value (the last
+	# extrusion in the previous layer)
+	for i,layer in enumerate(layergroups[1:]):
+		try:
+			last_extrude_line = next(filter(GCLine.is_extrude, reversed(layer.lines)))
+		except:
+			layer.last_extrude = None
+		else:
+			layer.last_extrude = last_extrude_line.args['E']
 
 	postamble = layer_class(postamble, layernum='postamble')
 	preamble  = layer_class(preamble, layernum='preamble')
