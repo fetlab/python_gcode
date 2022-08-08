@@ -145,9 +145,15 @@ class GCLines(UserList):
 				s = to_get.start if to_get.start is not None else self.lineno_min()
 				e = to_get.stop  if to_get.stop  is not None else self.lineno_max()
 
+				if s is None or e is None:
+					return GCLines()
+
 				if s < self.lineno_min() or e > self.lineno_max():
-					raise ValueError(' '.join((f'Requested slice {s}--{e or "end"} is out of range',
-							f'for available lines {self.lineno_min()}--{self.lineno_max()}.')))
+					rprint('[yellow]Warning: '
+							f'Requested slice {s}--{e or "end"} is out of range '
+							f'for available lines {self.lineno_min()}--{self.lineno_max()}.')
+					s = max(s, self.lineno_min())
+					e = min(e, self.lineno_max())
 
 				fetch = range(s, e, to_get.step or 1)
 
@@ -191,8 +197,8 @@ class GCLines(UserList):
 	def __contains__(self, lineno): return lineno in self._index
 	def index       (self, lineno): return self._index[lineno]
 	def remove      (self, line):   del(self[line.lineno])
-	def lineno_min  (self):         return min(self._index.keys())
-	def lineno_max  (self):         return max(self._index.keys())
+	def lineno_min  (self):         return min(self._index.keys() or [None])
+	def lineno_max  (self):         return max(self._index.keys() or [None])
 
 
 	def popidx(self, idx):
@@ -237,7 +243,13 @@ class GCLines(UserList):
 	def start(self, is_extrude=False) -> GCLine:
 		"""Return the first X/Y (extruding) move in this group of GCLines or None
 		if no moves are present."""
+		#TODO: what's right with is_extrude=True? Return the start point of the
+		# move, or the line with the extrude command in it?
 		test = GCLine.is_xyextrude if is_extrude else GCLine.is_xymove
+		# for i,line in enumerate(self.data):
+		# 	if test(line):
+		# 		return self.data[i-1] if is_extrude else line
+		# return None
 		return next(filter(test, self.data), None)
 
 
