@@ -1,10 +1,10 @@
 import re, sys
 from functools import total_ordering
 from collections import UserList
-from copy import copy
 
 from rich.console import Console
 rprint = Console(style="on #272727").print
+
 
 @total_ordering
 class GCLine:
