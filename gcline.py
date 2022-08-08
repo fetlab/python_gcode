@@ -76,6 +76,11 @@ class GCLine:
 		return self.code in ('G0', 'G1') and ('X' in self.args or 'Y' in self.args)
 
 
+	def is_extrude(self):
+		"""Return True if this is an extruding command."""
+		return self.code in ('G0', 'G1') and 'E' in self.args
+
+
 	def is_xyextrude(self):
 		"""Return True if it's an extruding move in the X/Y plane, else False."""
 		return self.is_xymove() and 'E' in self.args
