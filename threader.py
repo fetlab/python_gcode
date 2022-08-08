@@ -1,7 +1,7 @@
 import plotly.graph_objects as go
 from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
-from math import sin, cos, degrees, radians
+from math import sin, cos, degrees, radians, floor
 from typing import List
 from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy
 from fastcore.basics import store_attr
@@ -534,6 +534,37 @@ class Step:
 		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
 		and .gc_line2 member which are GCLines.
 		"""
+
+		##TODO: various repeated lines and incorrect extrusion amounts. Probably
+		# I need to make extrusion relative or recalculate extrusion values for
+		# every time a chunk gets rearranged.
+		"""
+		G1 X36.504 Y49.083
+		G1 X20.591 Y33.171 E2859.94293
+→		G1 X20.591 Y33.171 E2859.94293
+		G0 F3000 X49.823 Y45.244 ; ---- Skipped 4 lines; fake move
+		G1 X49.678 Y45.287
+		G1 X26.932 Y22.541 E2862.7118
+		G0 F9000 X24.671 Y23.203
+		G1 F3000 X17.17 Y51.197 E2863.67573
+→		G1 F3000 X17.17 Y51.197 E2863.67573
+		G0 F3000 X56.057 Y31.478 ; ---- Skipped 2 lines; fake move
+		G0 F9000 X61.625 Y40.263
+		G1 F3000 X40.061 Y18.699 E2866.02141
+		G1 F3000 X40.061 Y18.699 E2866.02141
+		G0 F3000 X29.906 Y50.03 ; ---- Skipped 2 lines; fake move
+		G0 F9000 X29.366 Y50.431
+		G1 F3000 X18.304 Y39.368 E2867.60137
+		G1 F3000 X18.304 Y39.368 E2867.60137
+		G0 F3000 X57.228 Y61.323 ; ---- Skipped 17 lines; fake move
+		G0 F9000 X58.231 Y60.231
+		G1 F3000 X59.097 Y56.999 E2872.59777
+		G0 F9000 X40.957 Y60.545
+→		G1 F1500 E2866.68014
+		"""
+
+		rprint(f'[red]————— START STEP {self.number}: {self.name} —————')
+
 		gcode = []
 
 		if not self.gcsegs:
@@ -559,28 +590,31 @@ class Step:
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
 
 		#Find breaks in line numbers between gc_lines for two adjacent segments
-		for seg1, seg2 in zip(self.gcsegs[:-1], self.gcsegs[1:]):
+		for i, (seg1, seg2) in enumerate(zip(self.gcsegs[:-1], self.gcsegs[1:])):
 			#Get line numbers bordering the interval between the two segments
 			seg1_last  = seg1.gc_lines.last.lineno
 			seg2_first = seg2.gc_lines.first.lineno
+			seg_diff   = seg2_first - seg1_last
 
-			if seg2_first - seg1_last == 0:
+			if seg_diff == 0:
 				#Don't add last line to avoid double lines from adjacent segments
 				gcode.extend(seg1.gc_lines.data[:-1])
 			else:
 				#Include the last line since the next segment doesn't duplicate it
 				gcode.extend(seg1.gc_lines.data)
 
+			if seg_diff > 1:
 				#If the line numbers are not contiguous, check if a move is required
 				if missing_move := self.layer.lines[seg1_last+1:seg2_first].end():
 					#seg2 won't have the repeated last line from seg1, so add it
-					gcode.append(seg1.gc_lines.last)
+					# gcode.append(seg1.gc_lines.last)
 
 					#Create a "fake" new gcode line to position the head in the right place
 					# for the next extrusion
 					new_line = missing_move.as_xymove()
 					new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
-					new_line.comment = f'---- Skipped {seg2_first-seg1_last-1} lines; fake move'
+					rprint(f'  new line: {new_line}')
+					new_line.comment = f'---- Skipped {seg1_last+1}—{seg2_first-1} ({seg2_first-seg1_last-1} lines); fake move'
 					gcode.append(new_line)
 
 		#Add last segment's lines
@@ -597,13 +631,11 @@ class Step:
 
 
 	def add(self, gcsegs:List[GSegment]):
-		#TODO: layer argument not used
 		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} unprinted gcsegs to Step')
 		for seg in gcsegs:
 			if not seg.printed:
 				self.gcsegs.append(seg)
 				seg.printed = True
-		rprint(f'Added {len(self.gcsegs)} segments')
 
 
 	def __enter__(self):
@@ -674,15 +706,40 @@ class Steps:
 
 	def gcode(self):
 		"""Return the gcode for all steps."""
-		r = GCLines()
+		r = []
 		for i,step in enumerate(self.steps):
+			#TODO: if step.gcode() is [], not GCLines, then things fail here;
+			# however,can't make it GCLines without adding line numbers to new lines...
 			g = step.gcode()
-			g.insert(0, GCLine(lineno=r.last.lineno+.5 if r else 0.5,
-				comment=f'Step {i} ({len(g)} lines) ---------------------------'))
+
+			#Fill in any fake moves we need between steps
+			start_extrude = next(
+				filter(lambda l:l.is_xyextrude() and isinstance(l.lineno, (int,float)), g),
+				None)
+			if r and start_extrude:
+				last_line = next(
+						filter(lambda l: l.is_xymove() and isinstance(l.lineno, int),
+						reversed(r)), None)
+				breakpoint()
+				if last_line and (missing_move := self.layer.lines[last_line.lineno+1:
+						#int(floor(r.last.lineno))+1:
+						start_extrude.lineno].end()):
+					new_line = missing_move.as_xymove()
+					new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
+					rprint(f'  new step line: {new_line}')
+					new_line.comment = '---- fake inter-step move'
+					g.append(new_line)
+
+			#Renumber added lines so the GCLines object keeps them in order
 			if g[1:] and not isinstance(g[1].lineno, (int,float)):
-				last = r.last.lineno if r else 0
+				last = r[-1].lineno if r else 0
 				for i,l in enumerate(g[1:]):
 					l.lineno = last + (i+1)/len(g[1:])
+
+			#Put the step-delimiter comment first; do it last to prevent issues
+			g.insert(0, GCLine(lineno=r[-1].lineno+.5 if r else 0.5,
+				comment=f'Step {i+1} ({len(g)} lines): {step.name} ---------------------------'))
+
 			r.extend(g)
 		return r
 
@@ -697,7 +754,7 @@ class Steps:
 				continue
 
 			rprint(f'Step {stepnum}: {step.name}')
-			fig = go.Figure()
+			fig = go.FigureWidget()
 
 			#Plot the bed
 			step.printer.bed.plot(fig)
@@ -897,7 +954,6 @@ class Threader:
 				if to_print:
 					with steps.new_step(f'Print {len(to_print)} overlapping layers segments') as s:
 						s.add(to_print)
-					rprint(to_print)
 				else:
 					rprint(f"{i}: Nothing intersecting thread to print")
 					self.debug_threads.append(('intersecting', i, thread_seg,
