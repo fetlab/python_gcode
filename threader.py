@@ -720,7 +720,7 @@ class Steps:
 				last_line = next(
 						filter(lambda l: l.is_xymove() and isinstance(l.lineno, int),
 						reversed(r)), None)
-				breakpoint()
+				#breakpoint()
 				if last_line and (missing_move := self.layer.lines[last_line.lineno+1:
 						#int(floor(r.last.lineno))+1:
 						start_extrude.lineno].end()):
