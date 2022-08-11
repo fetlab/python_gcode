@@ -536,9 +536,9 @@ class Step:
 		and .gc_line2 member which are GCLines.
 		"""
 
-		##TODO: various repeated lines and incorrect extrusion amounts. Probably
-		# I need to make extrusion relative or recalculate extrusion values for
-		# every time a chunk gets rearranged.
+		#TODO: incorrect extrusion amounts. Probably I need to make extrusion
+		# relative or recalculate extrusion values for every time a chunk gets
+		# rearranged.
 		"""
 		G1 X36.504 Y49.083
 		G1 X20.591 Y33.171 E2859.94293
