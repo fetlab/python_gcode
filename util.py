@@ -99,7 +99,8 @@ class Saver:
 		return self
 
 	def __exit__(self, exc_type, value, tb):
-		print('Saver exit')
+		from threader import rprint
+		rprint(f'--- Saver exit: {self}\n---')
 		if exc_type is not None:
 			return False
 		for var,oldval in self.saved.items():
