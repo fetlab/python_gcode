@@ -1,7 +1,7 @@
 import plotly.graph_objects as go
 from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
-from math import sin, cos, degrees, radians, floor
+from math import sin, cos, degrees, radians
 from typing import List
 from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy
 from fastcore.basics import store_attr
