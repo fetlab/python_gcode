@@ -391,10 +391,11 @@ class Printer:
 						self.execute_gcode(rline)
 						newlines.append(rline)
 
-				saved = [saver.saved[var] for var in save_vars if var in saver.changed]
-				for oldline in saved:
-					self.execute_gcode(oldline)
-					newlines.append(oldline)
+				#Restore extruder state if it was changed
+				for var in save_vars:
+					if var in saver.changed:
+						self.printer.execute_gcode(saver.saved[var])
+						newlines.append(saver.saved[var])
 
 				#Manufacture bogus fractional line numbers for display
 				for i,l in enumerate(newlines):
@@ -569,7 +570,10 @@ class Step:
 
 		if not self.gcsegs:
 			if self.printer.ring.initial_angle != self.printer.ring.angle:
-				#Variables to be restored, in the order they should be restored
+				#Variables to be restored, in the order they should be restored: we
+				# "execute" each line of ring-movement gcode to update the machine
+				# state, but want to reset the extruder to the current state after the
+				# ring moves.
 				save_vars = 'extruder_no', 'extrusion_mode'
 
 				newlines = []
@@ -578,10 +582,11 @@ class Step:
 						self.printer.execute_gcode(rline)
 						newlines.append(rline)
 
-				saved = [saver.saved[var] for var in save_vars if var in saver.changed]
-				for oldline in saved:
-					self.printer.execute_gcode(oldline)
-					newlines.append(oldline)
+				#Restore extruder state if it was changed
+				for var in save_vars:
+					if var in saver.changed:
+						self.printer.execute_gcode(saver.saved[var])
+						newlines.append(saver.saved[var])
 
 				gcode.extend(newlines)
 			return gcode
