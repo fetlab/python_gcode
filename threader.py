@@ -7,11 +7,13 @@ from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy
 from fastcore.basics import store_attr
 from math import atan2
 from tlayer import TLayer
-from gcline import GCLine, GCLines
-from util import Saver
+from gcline import GCLine
+from util import Saver, find
 
 from rich.console import Console
 rprint = Console(style="on #272727", force_jupyter=True).print
+
+rprint("Loaded threader")
 
 # --- Options for specific setups ---
 # What size does the slicer think the bed is?
@@ -157,17 +159,6 @@ class Ring:
 		return f'Ring({self._angle:.2f}°, {self.center})'
 
 
-	def gcode_preamble(self) -> GCLines:
-		"""Return any code that should go in the preamble of a .gcode file."""
-		return [
-			GCLine(code='T1', comment='Switch to ring extruder'),
-			GCLine(code='M302', args={'P1':1}, comment='Disable cold extrusion prevention'),
-			GCLine(code='M92', args=dict(T=1, E=self.esteps_degree),
-				comment='Set steps per degree of ring rotation'),
-			GCLine(code='T0', comment='Switch back to default extruder'),
-		]
-
-
 	def attr_changed(self, attr, old_value, new_value):
 		rprint(f'Ring.{attr} changed from {old_value} to {new_value}')
 
@@ -229,10 +220,10 @@ class Ring:
 		extrude = self.rot_mul * dist * dir_mul
 
 		gc = ([
-			GCLine(code='T1', comment='Switch to ring extruder'),
-			GCLine(code='M82', comment='Set relative extrusion mode'),
+			GCLine(code='T1', comment='Switch to ring extruder', fake=True),
+			GCLine(code='M82', comment='Set relative extrusion mode', fake=True),
 			GCLine(code='G1', args={'E':round(extrude,3), 'F':8000},
-				comment=f'Ring move from {self.initial_angle:.2f}° to {self.angle:.2f}°'),
+				comment=f'Ring move from {self.initial_angle:.2f}° to {self.angle:.2f}°', fake=True),
 		])
 
 		self._angle = self.initial_angle
@@ -367,7 +358,7 @@ class Printer:
 		return printer
 
 
-	def gcode(self, lines):
+	def gcode(self, lines) -> List:
 		"""Return gcode. lines is a list of GCLines involved in the current step.
 		Use them to generate gcode for the ring to maintain the thread
 		trajectory."""
@@ -524,13 +515,11 @@ class Step:
 		return f'<Step {self.number} ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.printer}'
 
 
-	def gcode(self):
+	def gcode(self) -> List:
 		"""Render the gcode involved in this Step, returning a list of GCLines:
 			* Sort added gcode lines by line number. If there are breaks in line
 				number, check whether the represented head position also has a break.
 				If so, add gcode to move the head correctly.
-			* Whenever there is a movement, we need to check with the Printer object
-				whether we should move the ring to keep the thread at the correct angle.
 
 		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
 		and .gc_line2 member which are GCLines.
@@ -597,6 +586,8 @@ class Step:
 		#Find breaks in line numbers between gc_lines for two adjacent segments
 		for i, (seg1, seg2) in enumerate(zip(self.gcsegs[:-1], self.gcsegs[1:])):
 			#Get line numbers bordering the interval between the two segments
+			# (Note that .first and .last return the actual first/last line, while
+			# start() and end() return first and last *moves*)
 			seg1_last  = seg1.gc_lines.last.lineno
 			seg2_first = seg2.gc_lines.first.lineno
 			seg_diff   = seg2_first - seg1_last
@@ -617,6 +608,7 @@ class Step:
 					#Create a "fake" new gcode line to position the head in the right place
 					# for the next extrusion
 					new_line = missing_move.as_xymove()
+					new_line.fake = True
 					new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
 					rprint(f'  new line: {new_line}')
 					new_line.comment = f'---- Skipped {seg1_last+1}—{seg2_first-1} ({seg2_first-seg1_last-1} lines); fake move'
@@ -624,9 +616,6 @@ class Step:
 
 		#Add last segment's lines
 		gcode.extend(self.gcsegs[-1].gc_lines)
-
-		#And any extra attached to the layer
-		gcode.extend(self.layer.postamble)
 
 		#"Execute" the gcode so we can keep up with the printer state
 		for line in gcode:
@@ -638,6 +627,8 @@ class Step:
 	def add(self, gcsegs:List[GSegment]):
 		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} unprinted gcsegs to Step')
 		for seg in gcsegs:
+			if 21821 in seg.gc_lines:
+				rprint(f'[yellow]---- Adding 21821 ({"p" if seg.printed else "n"}) to {self}:\n{seg}\n----')
 			if not seg.printed:
 				self.gcsegs.append(seg)
 				seg.printed = True
@@ -704,7 +695,7 @@ class Steps:
 
 	def new_step(self, *messages):
 		self.steps.append(Step(self, ' '.join(map(str,messages))))
-		self.current.number = len(self.steps)
+		self.current.number = len(self.steps) - 1
 		rprint(f'\n[light_sea_green italic]{self.current}')
 		return self.current
 
@@ -713,39 +704,39 @@ class Steps:
 		"""Return the gcode for all steps."""
 		r = []
 		for i,step in enumerate(self.steps):
-			#TODO: if step.gcode() is [], not GCLines, then things fail here;
-			# however,can't make it GCLines without adding line numbers to new lines...
 			g = step.gcode()
 
-			#Fill in any fake moves we need between steps
-			start_extrude = next(
-				filter(lambda l:l.is_xyextrude() and isinstance(l.lineno, (int,float)), g),
-				None)
+			#--- Fill in any fake moves we need between steps ---
+			#Find the first extruding move in this step, if any
+			start_extrude = find(g, lambda l:l.is_xyextrude() and not l.fake)
+
 			if r and start_extrude:
-				last_line = next(
-						filter(lambda l: l.is_xymove() and isinstance(l.lineno, int),
-						reversed(r)), None)
-				#breakpoint()
-				if last_line and (missing_move := self.layer.lines[last_line.lineno+1:
-						#int(floor(r.last.lineno))+1:
-						start_extrude.lineno].end()):
+				#Find the last print head position
+				if missing_move := self.layer.lines[:start_extrude.lineno].end():
 					new_line = missing_move.as_xymove()
-					new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
-					rprint(f'  new step line: {new_line}')
 					new_line.comment = '---- fake inter-step move'
+					new_line.fake = True
+					new_line.lineno = float(new_line.lineno)
 					g.append(new_line)
+					rprint(f'  new step line: {new_line}')
 
 			#Renumber added lines so the GCLines object keeps them in order
-			if g[1:] and not isinstance(g[1].lineno, (int,float)):
-				last = r[-1].lineno if r else 0
-				for i,l in enumerate(g[1:]):
-					l.lineno = last + (i+1)/len(g[1:])
+			# if g[1:] and not isinstance(g[1].lineno, (int,float)):
+			# 	last = r[-1].lineno if r else 0
+			# 	for i,l in enumerate(g[1:]):
+			# 		l.lineno = last + (i+1)/len(g[1:])
 
 			#Put the step-delimiter comment first; do it last to prevent issues
-			g.insert(0, GCLine(lineno=r[-1].lineno+.5 if r else 0.5,
-				comment=f'Step {i+1} ({len(g)} lines): {step.name} ---------------------------'))
+			g.insert(0, GCLine(#lineno=r[-1].lineno+.5 if r else 0.5,
+				comment=f'Step {step.number} ({len(g)} lines): {step.name} ---------------------------'))
 
 			r.extend(g)
+
+		#Finally add any extra attached to the layer
+		r.append(GCLine(#lineno=r[-1].lineno+.5,
+			comment='Layer postamble ------'))
+		r.extend(self.layer.postamble)
+
 		return r
 
 
@@ -759,7 +750,7 @@ class Steps:
 				continue
 
 			rprint(f'Step {stepnum}: {step.name}')
-			fig = go.FigureWidget()
+			fig = go.Figure()
 
 			#Plot the bed
 			step.printer.bed.plot(fig)
@@ -824,7 +815,7 @@ class Steps:
 					yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
 					margin=dict(l=0, r=20, b=0, t=0, pad=0),
 					showlegend=False,)
-			fig.show('notebook')
+			fig.show()
 
 		rprint('Finished routing this layer')
 

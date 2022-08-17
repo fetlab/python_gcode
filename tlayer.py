@@ -75,7 +75,7 @@ class TLayer(Cura4Layer):
 					yaxis={'scaleanchor':'x', 'scaleratio':1, 'constrain':'domain'},
 					margin=dict(l=0, r=20, b=0, t=0, pad=0),
 					showlegend=False,)
-			fig.show('notebook')
+			fig.show()
 
 		return fig
 

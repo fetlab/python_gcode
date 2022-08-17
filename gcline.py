@@ -6,9 +6,10 @@ from rich.console import Console
 rprint = Console(style="on #272727").print
 
 
+#Use total_ordering to allow comparing based on line number
 @total_ordering
 class GCLine:
-	def __init__(self, line='', lineno='', code=None, args={}, comment=None):
+	def __init__(self, line='', lineno='', code=None, args={}, comment=None, fake=False):
 		"""Parse a single line of gcode into its code and named
 		arguments."""
 		self.line    = line.strip()
@@ -17,6 +18,7 @@ class GCLine:
 		self.args    = args or {}
 		self.comment = comment
 		self.empty   = False
+		self.fake    = fake    #Set to True if it's been generated
 
 		#Comment-only or empty line
 		if not self.code and self.line in ('', ';'):
@@ -97,6 +99,10 @@ class GCLine:
 		return c
 
 
+	def xy(self):
+		return self.args['X'], self.args['Y']
+
+
 	def construct(self):
 		"""Construct and return a line of gcode based on self.code,
 		self.args, and self.comment."""
@@ -104,10 +110,25 @@ class GCLine:
 		if self.code:
 			out.append(self.code)
 		out.extend(['{}{}'.format(k, v) for k,v in self.args.items()])
+		out.append(f'; [{self.lineno}]')
 		if self.comment:
 			out.append('; ' + self.comment)
 
 		return ' '.join(out)
+
+
+	def as_record(self):
+		"""Return a representation of this line as a Pandas-compatible record
+		dict."""
+		columns = 'lineno, code, X, Y, Z, E, F, S, comment, original'
+		r = {k:'' for k in columns.split(', ')}
+		r.update(self.args)
+		r['lineno']   = self.lineno
+		r['code']     = self.code
+		r['comment']  = self.comment
+		r['original'] = self.line
+		return r
+
 
 
 class GCLines(UserList):

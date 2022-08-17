@@ -33,6 +33,13 @@ def listsplit(l, sepfunc, maxsplit=-1, keepsep='>', minsize=0):
 	return r
 
 
+def find(lst, func=None, rev=False):
+	"""Return the first item in the list that is true. Pass an optional
+	evaluation function. Set rev to True to search backwards."""
+	lst = reversed(lst) if rev else lst
+	return next(filter(func, lst), None)
+
+
 def listsplit2(l, sepfunc, maxsplit=-1, keepsep='>'):
 	r = []
 	start = 0
