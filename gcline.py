@@ -99,6 +99,7 @@ class GCLine:
 		return c
 
 
+	@property
 	def xy(self):
 		return self.args['X'], self.args['Y']
 

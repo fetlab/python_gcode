@@ -9,6 +9,7 @@ from math import atan2
 from tlayer import TLayer
 from gcline import GCLine
 from util import Saver, find
+from enum import Enum
 
 from rich.console import Console
 rprint = Console(style="on #272727", force_jupyter=True).print
@@ -312,8 +313,8 @@ class Printer:
 		self.anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
 		#Default states
-		self.extruder_no    = GCLine(code='T0',  args={}, comment='Switch to main extruder')
-		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode')
+		self.extruder_no    = GCLine(code='T0',  args={}, comment='Switch to main extruder', fake=True)
+		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode', fake=True)
 
 		self.thread_seg = None
 
@@ -322,6 +323,9 @@ class Printer:
 	x = property(**attrhelper('_x'))
 	y = property(**attrhelper('_y'))
 	z = property(**attrhelper('_z'))
+
+	@property
+	def xy(self): return self.x, self.y
 
 
 	def __repr__(self):
@@ -400,7 +404,8 @@ class Printer:
 
 
 	def execute_gcode(self, gcline:GCLine):
-		"""Update the printer state according to the passed line of gcode."""
+		"""Update the printer state according to the passed line of gcode. Return
+		the line of gcode for convenience."""
 		if gcline.is_xymove():
 			self.x = gcline.args['X']
 			self.y = gcline.args['Y']
@@ -408,6 +413,7 @@ class Printer:
 			self.extrusion_mode = gcline
 		elif gcline.code and gcline.code[0] == 'T':
 			self.extruder_no = gcline
+		return gcline
 
 
 	def anchor_to_ring(self) -> Segment:
@@ -515,7 +521,7 @@ class Step:
 		return f'<Step {self.number} ({len(self.gcsegs)} segments)>: [light_sea_green italic]{self.name}[/]\n  {self.printer}'
 
 
-	def gcode(self) -> List:
+	def gcode(self, include_start=False) -> List:
 		"""Render the gcode involved in this Step, returning a list of GCLines:
 			* Sort added gcode lines by line number. If there are breaks in line
 				number, check whether the represented head position also has a break.
@@ -583,43 +589,137 @@ class Step:
 		#Sort gcsegs by the first gcode line number in each
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
 
-		#Find breaks in line numbers between gc_lines for two adjacent segments
-		for i, (seg1, seg2) in enumerate(zip(self.gcsegs[:-1], self.gcsegs[1:])):
-			#Get line numbers bordering the interval between the two segments
-			# (Note that .first and .last return the actual first/last line, while
-			# start() and end() return first and last *moves*)
-			seg1_last  = seg1.gc_lines.last.lineno
-			seg2_first = seg2.gc_lines.first.lineno
-			seg_diff   = seg2_first - seg1_last
+		"""
+		Conditions:
+			In a 2-line Segment:
+				If the first line is an Extrude:
+					SKIP
+				If the first line is an XY move:
+					SAVE
+				The second line is always an Extrude. Do:
+					If the previous saved line number is 1 less:
+						SAVE
+					else:
+						create and SAVE a FAKE
+						SAVE this line
 
-			if seg_diff == 0:
-				#Don't add last line to avoid double lines from adjacent segments
-				gcode.extend(seg1.gc_lines.data[:-1])
-			else:
-				#Include the last line since the next segment doesn't duplicate it
-				gcode.extend(seg1.gc_lines.data)
+			In a > 2-line Segment, there is always one or more X/Y Move lines, but
+				only ever one Extrude line, which is always the last line.
+			SAVE every line
+		"""
 
-			if seg_diff > 1:
-				#If the line numbers are not contiguous, check if a move is required
-				if missing_move := self.layer.lines[seg1_last+1:seg2_first].end():
-					#seg2 won't have the repeated last line from seg1, so add it
-					# gcode.append(seg1.gc_lines.last)
+		actions = Enum('Actions', 'SKIP SAVE FAKE_SAVE FAKE_SKIP')
+		for i, seg in enumerate(self.gcsegs):
 
-					#Create a "fake" new gcode line to position the head in the right place
-					# for the next extrusion
-					new_line = missing_move.as_xymove()
+			#In a > 2-line Segment, there is always one or more X/Y Move
+			# lines, but only ever one Extrude line, which is always the last line.
+			# Save and execute every line, as the XY move will put the head in the
+			# right place for the extrude.
+			if len(seg.gc_lines) > 2:
+				for line in seg.gc_lines:
+					gcode.append(self.printer.execute_gcode(line))
+				continue
+
+			#For 2-line Segments
+			l1, l2 = seg.gc_lines.data
+
+			if l1.is_xymove() and not l1.is_xyextrude():
+				gcode.append(self.printer.execute_gcode(l1))
+
+			line_diff = l2.lineno - gcode[-1].lineno if gcode else float('inf')
+			if line_diff > 0:
+				if line_diff > 1:
+					new_line = self.layer.lines[:l2.lineno].end().as_xymove()
 					new_line.fake = True
-					new_line.lineno = float(new_line.lineno) #hack for easy finding "fake" lines
-					rprint(f'  new line: {new_line}')
-					new_line.comment = f'---- Skipped {seg1_last+1}—{seg2_first-1} ({seg2_first-seg1_last-1} lines); fake move'
-					gcode.append(new_line)
+					if gcode:
+						new_line.comment = f'---- Skipped {gcode[-1].lineno+1}–{l2.lineno-1}; fake move from {new_line.lineno}'
+					else:
+						new_line.comment = f'---- Fake move from {new_line.lineno}'
+					rprint(f'new line from {new_line.lineno}')
+					new_line.lineno = ''
+					gcode.append(self.printer.execute_gcode(new_line))
+				gcode.append(self.printer.execute_gcode(l2))
 
-		#Add last segment's lines
-		gcode.extend(self.gcsegs[-1].gc_lines)
+		return gcode
 
-		#"Execute" the gcode so we can keep up with the printer state
-		for line in gcode:
-			self.printer.execute_gcode(line)
+		if False:
+
+			last_lineno = gcode[-1].lineno if gcode else float('inf')
+			first_move = seg.gc_lines.start()
+
+			for line in seg.gc_lines:
+				action = None
+				line_diff = line.lineno - last_lineno
+
+				if line_diff == 0:
+					#This line is the same as the last one, or the first extruding
+					# movement line in a Step, so skip it
+					action = actions.SKIP
+
+				#elif line.is_xyextrude() and line == first_move:
+				#	#This is an extrusion move, and the first move in the Segment; skip it
+				#	action = actions.SKIP
+
+				elif line_diff == 1:
+					#The first line of this segment directly follows the last saved line
+					# of gcode, so we can save it
+					action = actions.SAVE
+
+				else:
+					#There is a line-number gap between the last-saved line of gcode and
+					# the current line, or this is the first line in a new Step
+					if line.is_xymove():
+						if line_diff < 0 and include_start:
+							action = actions.SAVE
+						elif self.printer.xy != line.xy:
+							if line.is_xyextrude():
+								if line == first_move:
+									#Extruding line as the first move, so we need to make a fake
+									# line instead
+									action = actions.FAKE_SKIP
+								else:
+									action = actions.FAKE_SAVE
+							else:
+								action = actions
+							#There's a gap, so we need to manufacture a fake line. Save the
+							# current line if it's not the first line in the Step
+							action = actions.FAKE_SKIP if line_diff < 0 else actions.FAKE_SAVE
+						else:
+							action = actions.SKIP
+					else:
+						#Not a move line, so just save it
+						action = actions.SAVE
+
+				#Now take the requested action
+				old_last_lineno = last_lineno if last_lineno != float('inf') else 'XX'
+				last_lineno = line.lineno
+				if action == actions.SKIP:
+					continue
+				elif action == actions.SAVE:
+					pass
+				elif action == actions.FAKE_SAVE or action == actions.FAKE_SKIP:
+					rprint(f'[{i}] {old_last_lineno} → {line.lineno} ({line_diff}): {action.name}')
+					#Need to construct a move to get the head in the right place; find
+					# the last move before this line and move the print head to that
+					# line's destination
+					if missing_move := self.layer.lines[:line.lineno].end():
+						new_line = missing_move.as_xymove()
+						new_line.fake = True
+						new_line.lineno = ''
+						if gcode:
+							new_line.comment = f'---- Skipped {gcode[-1].lineno+1}–{line.lineno-1}; fake move from {missing_move.lineno}'
+						else:
+							new_line.comment = f'---- Fake move from {missing_move.lineno}'
+						rprint(f'new line from {missing_move.lineno}: {new_line}')
+						gcode.append(new_line)
+						self.printer.execute_gcode(new_line)
+				else:
+					raise ValueError(f'No action set for line {i}:\n  {line}\nof segment {seg}')
+
+				#We get here for actions.SAVE and actions.FAKE_*
+				if action != actions.FAKE_SKIP:
+					gcode.append(line)
+					self.printer.execute_gcode(line)
 
 		return gcode
 
@@ -704,36 +804,32 @@ class Steps:
 		"""Return the gcode for all steps."""
 		r = []
 		for i,step in enumerate(self.steps):
-			g = step.gcode()
+			g = step.gcode(include_start=not any([isinstance(l.lineno, int) for l in r]))
 
 			#--- Fill in any fake moves we need between steps ---
-			#Find the first extruding move in this step, if any
-			start_extrude = find(g, lambda l:l.is_xyextrude() and not l.fake)
+			#Find the first "real" extruding move in this step, if any
+			start_extrude = find(g, lambda l:l.is_xyextrude() and isinstance(l.lineno, int))
 
 			if r and start_extrude:
 				#Find the last print head position
 				if missing_move := self.layer.lines[:start_extrude.lineno].end():
 					new_line = missing_move.as_xymove()
-					new_line.comment = '---- fake inter-step move'
+					new_line.comment = f'---- fake inter-step move from {missing_move.lineno}'
 					new_line.fake = True
-					new_line.lineno = float(new_line.lineno)
+					new_line.lineno = ''
 					g.append(new_line)
 					rprint(f'  new step line: {new_line}')
 
-			#Renumber added lines so the GCLines object keeps them in order
-			# if g[1:] and not isinstance(g[1].lineno, (int,float)):
-			# 	last = r[-1].lineno if r else 0
-			# 	for i,l in enumerate(g[1:]):
-			# 		l.lineno = last + (i+1)/len(g[1:])
-
 			#Put the step-delimiter comment first; do it last to prevent issues
 			g.insert(0, GCLine(#lineno=r[-1].lineno+.5 if r else 0.5,
+				fake=True,
 				comment=f'Step {step.number} ({len(g)} lines): {step.name} ---------------------------'))
 
 			r.extend(g)
 
 		#Finally add any extra attached to the layer
 		r.append(GCLine(#lineno=r[-1].lineno+.5,
+			fake=True,
 			comment='Layer postamble ------'))
 		r.extend(self.layer.postamble)
 

@@ -1,8 +1,21 @@
-from collections import namedtuple
-from time import time
-from functools import wraps
+from collections  import namedtuple
+from time         import time
+from functools    import wraps
+from operator     import itemgetter
 
 Point3 = namedtuple('Point3', 'x y z')
+
+def find_lineno(lineno, steps=None, gcsegs=None, gc_lines=None):
+	if gc_lines:
+		return any([l for l in gc_lines if l.lineno == lineno])
+	if gcsegs:
+		return {f'Seg {i}': seg for i,seg in enumerate(gcsegs) if
+				find_lineno(lineno, gc_lines=seg.gc_lines)}
+	if steps:
+		return dict(filter(itemgetter(1),
+			[(f'Step {i}', find_lineno(lineno, gcsegs=step.gcsegs))
+				for i,step in enumerate(steps)]))
+
 
 def listsplit(l, sepfunc, maxsplit=-1, keepsep='>', minsize=0):
 	"""Return list l divided into chunks, separated whenever function sepfunc(line)
