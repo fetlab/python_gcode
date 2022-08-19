@@ -5,6 +5,26 @@ from operator     import itemgetter
 
 Point3 = namedtuple('Point3', 'x y z')
 
+def construct_lines_rel2abs(gc_lines, start=0):
+	"""Construct a list of GCLine objects, replacing the existing E values with
+	absolute extrusion amounts based on each GCLine's relative_extrude value.
+	Use start as the starting extrusion value. Return the constructed list and
+	the ending extrusion value."""
+	r = []
+	ext_val = start
+	for line in gc_lines:
+		if 'E' in line.args and line.code in ['G0', 'G1']:
+			try:
+				ext_val += line.relative_extrude
+			except AttributeError:
+				r.append(line.construct())
+			else:
+				r.append(line.construct(E=f'{ext_val:.5f}'))
+		else:
+			r.append(line.construct())
+	return r, ext_val
+
+
 def find_lineno(lineno, steps=None, gcsegs=None, gc_lines=None):
 	if gc_lines:
 		return any([l for l in gc_lines if l.lineno == lineno])

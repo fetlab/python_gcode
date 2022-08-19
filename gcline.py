@@ -104,13 +104,17 @@ class GCLine:
 		return self.args['X'], self.args['Y']
 
 
-	def construct(self):
+	def construct(self, **kwargs):
 		"""Construct and return a line of gcode based on self.code,
-		self.args, and self.comment."""
+		self.args, and self.comment. Pass kwargs to override this line's existing
+		arguments."""
+		args = self.args.copy()
+		args.update(kwargs)
 		out = []
+
 		if self.code:
 			out.append(self.code)
-		out.extend(['{}{}'.format(k, v) for k,v in self.args.items()])
+		out.extend(['{}{}'.format(k, v) for k,v in args.items()])
 		out.append(f'; [{self.lineno}]')
 		if self.comment:
 			out.append('; ' + self.comment)

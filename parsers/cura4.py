@@ -32,7 +32,7 @@ class GCodeException(Exception):
 #   ;MESH:NONMESH
 #   ;TYPE:SKIRT
 
-__name__ = "Cura4"
+__name__ = "cura4"
 
 def detect(lines):
 	return any('Cura_SteamEngine' in l for l in lines[:20])
@@ -42,7 +42,25 @@ def detect(lines):
 def parse(gcobj):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
 	layer_class = gcobj.layer_class
-	glines = [GCLine(l, lineno=n+1) for n,l in enumerate(gcobj.filelines)]
+	#glines = [GCLine(l, lineno=n+1) for n,l in enumerate(gcobj.filelines)]
+	glines = []
+	last_extrude = 0
+	ext_mode = 'relative'
+	for i,l in enumerate(gcobj.filelines):
+		line = GCLine(l, lineno=i+1)
+		if line.code == 'M82': ext_mode = 'absolute'
+		if line.code == 'M83': ext_mode = 'relative'
+		if 'E' in line.args:
+			if ext_mode == 'absolute':
+				if line.code == 'G92':
+					last_extrude = line.args['E']
+				elif line.code in ['G0', 'G1']:
+					line.relative_extrude = line.args['E'] - last_extrude
+					last_extrude = line.args['E']
+			else:
+				line.relative_extrude = line.args['E']
+		glines.append(line)
+
 	gcobj.lines = glines.copy()
 
 	#Extract the preamble and postamble
@@ -105,6 +123,7 @@ def parse(gcobj):
 	gcobj.preamble  = preamble
 	gcobj.layers    = layergroups
 	gcobj.postamble = postamble
+
 
 def parse_3mf(filename):
 	"""Usage:
