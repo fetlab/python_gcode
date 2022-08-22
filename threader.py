@@ -10,6 +10,7 @@ from tlayer import TLayer
 from gcline import GCLine
 from util import Saver, find
 from enum import Enum
+from gcode import GcodeFile
 
 from rich.console import Console
 rprint = Console(style="on #272727", force_jupyter=True).print
@@ -434,7 +435,7 @@ class Printer:
 		#First check to see if we have intersections at all; if not, we're done!
 		thr = self.anchor_to_ring()
 		if not any(thr.intersection(i) for i in avoid):
-			rprint(f"Thread intersects 0 of {len(avoid)} geometry segments, don't need to move ring")
+			#rprint(f"Thread intersects 0 of {len(avoid)} geometry segments, don't need to move ring")
 			return
 
 		#TODO: this is the computational geometry visibility problem and should be
@@ -530,35 +531,6 @@ class Step:
 		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
 		and .gc_line2 member which are GCLines.
 		"""
-
-		#TODO: incorrect extrusion amounts. Probably I need to make extrusion
-		# relative or recalculate extrusion values for every time a chunk gets
-		# rearranged.
-		"""
-		G1 X36.504 Y49.083
-		G1 X20.591 Y33.171 E2859.94293
-→		G1 X20.591 Y33.171 E2859.94293
-		G0 F3000 X49.823 Y45.244 ; ---- Skipped 4 lines; fake move
-		G1 X49.678 Y45.287
-		G1 X26.932 Y22.541 E2862.7118
-		G0 F9000 X24.671 Y23.203
-		G1 F3000 X17.17 Y51.197 E2863.67573
-→		G1 F3000 X17.17 Y51.197 E2863.67573
-		G0 F3000 X56.057 Y31.478 ; ---- Skipped 2 lines; fake move
-		G0 F9000 X61.625 Y40.263
-		G1 F3000 X40.061 Y18.699 E2866.02141
-		G1 F3000 X40.061 Y18.699 E2866.02141
-		G0 F3000 X29.906 Y50.03 ; ---- Skipped 2 lines; fake move
-		G0 F9000 X29.366 Y50.431
-		G1 F3000 X18.304 Y39.368 E2867.60137
-		G1 F3000 X18.304 Y39.368 E2867.60137
-		G0 F3000 X57.228 Y61.323 ; ---- Skipped 17 lines; fake move
-		G0 F9000 X58.231 Y60.231
-		G1 F3000 X59.097 Y56.999 E2872.59777
-		G0 F9000 X40.957 Y60.545
-→		G1 F1500 E2866.68014
-		"""
-
 		rprint(f'[red]————— START STEP {self.number}: {self.name} —————')
 
 		gcode = []
@@ -793,10 +765,11 @@ class Steps:
 		return self.steps[-1] if self.steps else None
 
 
-	def new_step(self, *messages):
+	def new_step(self, *messages, debug=True):
 		self.steps.append(Step(self, ' '.join(map(str,messages))))
 		self.current.number = len(self.steps) - 1
-		rprint(f'\n[light_sea_green italic]{self.current}')
+		if debug:
+			rprint(f'\n[light_sea_green italic]{self.current}')
 		return self.current
 
 
@@ -805,6 +778,9 @@ class Steps:
 		r = []
 		for i,step in enumerate(self.steps):
 			g = step.gcode(include_start=not any([isinstance(l.lineno, int) for l in r]))
+
+			if not g:
+				continue
 
 			#--- Fill in any fake moves we need between steps ---
 			#Find the first "real" extruding move in this step, if any
@@ -828,9 +804,8 @@ class Steps:
 			r.extend(g)
 
 		#Finally add any extra attached to the layer
-		r.append(GCLine(#lineno=r[-1].lineno+.5,
-			fake=True,
-			comment='Layer postamble ------'))
+		if r:
+			r.append(GCLine(fake=True, comment='Layer postamble ------'))
 		r.extend(self.layer.postamble)
 
 		return r
@@ -918,30 +893,36 @@ class Steps:
 
 
 class Threader:
-	def __init__(self, gcode):
-		store_attr()
-		self.printer = Printer()
+	def __init__(self, gcode_file:GcodeFile):
+		self.gcode_file  = gcode_file
+		self.printer     = Printer()
+		self.layer_steps = []
 
 		#TODO: add special preamble to gcode object for when gcode is generated to
 		# e.g. set M92. Maybe call each gcode-generating class for preamble
 		# commands first?
 
 
-	def route_model(self, thread):
-		for layer in self.gcode.layers:
-			self.layer_steps.append(self.route_layer(thread, layer))
-		return self.layer_steps
+	def gcode(self):
+		"""Return the gcode for all layers."""
+		r = []
+		for steps_obj in self.layer_steps:
+			r.append(GCLine(fake=True, comment=f'==== Start layer {steps_obj.layer.number} ===='))
+			r.extend(steps_obj.gcode())
+		return r
 
 
-	def route_layer(self, thread_list, layer):
+	def route_model(self, thread_list: List[GSegment]):
+		self.layer_steps = [self.route_layer(thread_list, layer) for layer in
+				self.gcode_file.layers]
+
+
+	def route_layer(self, thread_list: List[GSegment], layer):
 		"""Goal: produce a sequence of "steps" that route the thread through one
 		layer. A "step" is a set of operations that diverge from the original
 		gcode; for example, printing all of the non-thread-intersecting segments
 		would be one "step".
 		"""
-		rprint(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
-		for i, tseg in enumerate(thread_list):
-			rprint(f'\t{i}. {tseg}')
 
 		self.printer.layer = layer
 		self.printer.z     = layer.z
@@ -954,6 +935,36 @@ class Threader:
 		#Add bed anchor -> start point if not there already
 		if thread[0].start_point != self.printer.bed.anchor:
 			thread.insert(0, GSegment(self.printer.bed.anchor, thread[0].start_point))
+
+		#Is the first thread anchor above the top of this layer, or is the last thread anchor
+		# below it? If so, we can skip most of the processing; we just need to be
+		# sure the print head will avoid the thread.
+		bot_z = layer.z - layer.layer_height/2
+		top_z = layer.z + layer.layer_height/2
+		if thread[1].start_point.z > top_z or thread[-1].end_point.z < bot_z:
+			#We want to avoid the computational cost of making geometry from the
+			# entire layer if we're not doing anything with it, so we'll just make a
+			# rectangle of segments based on the layer extents and avoid that. Might
+			# not work if the extents are too big.
+			(min_x, min_y), (max_x, max_y) = layer.extents()
+			ext_rect = [GSegment(a, b) for a,b in (
+				((min_x, min_y, layer.z), (min_x, max_y, layer.z)),
+				((min_x, max_y, layer.z), (max_x, max_y, layer.z)),
+				((max_x, max_y, layer.z), (max_x, min_y, layer.z)),
+				((max_x, min_y, layer.z), (min_x, min_y, layer.z)))]
+			with steps.new_step('Move thread to avoid layer extents', debug=False):
+				self.printer.thread_avoid(ext_rect)
+			#Set the Layer's postamble to the entire set of gcode lines so that we
+			# correctly generate the output gcode with Steps.gcode()
+			layer.postamble = layer.lines
+			return steps
+
+		#If we got here, the first thread anchor is inside this layer, so we need
+		# to do the actual work
+
+		rprint(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
+		for i, tseg in enumerate(thread_list):
+			rprint(f'\t{i}. {tseg}')
 
 		#Get the thread segments to work on
 		thread = layer.flatten_thread(thread)
@@ -974,7 +985,11 @@ class Threader:
 			return steps
 
 		#Snap thread to anchors
-		thread = layer.anchor_snap(thread)
+		snapped_thread = layer.anchor_snap(thread)
+		rprint('Snapped thread:')
+		for o,n in zip(thread, snapped_thread):
+			rprint(f'{o} → {n} ({o.start_point.distance(n.start_point)}, {o.end_point.distance(n.end_point)} mm)')
+		thread = snapped_thread
 
 		rprint(f'\n{len(thread)} thread segments in this layer:')
 		for i, tseg in enumerate(thread):
