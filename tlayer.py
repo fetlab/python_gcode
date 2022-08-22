@@ -138,16 +138,22 @@ class TLayer(Cura4Layer):
 				print(f'Thread segment {tseg} endpoints not in layer')
 				continue
 
+
 			#Clip segments to top/bottom of layer (note "walrus" operator := )
 			if s := tseg.intersection(bot): self.in_out.append(s)
 			if e := tseg.intersection(top): self.in_out.append(e)
-			segs.append(GSegment(s or tseg.start_point, e or tseg.end_point))
+			newseg = GSegment(s or tseg.start_point, e or tseg.end_point)
+
+			#Flatten segment to the layer's z-height, but not if the segment is
+			# vertical
+			if newseg.start_point.as2d() != newseg.end_point.as2d():
+				newseg.set_z(self.z)
+			segs.append(newseg)
 			# if s or e:
 			# 	print(f'Crop {tseg} to\n'
 			# 			  f'     {segs[-1]}')
 
-			#Flatten segment to the layer's z-height
-			segs[-1].set_z(self.z)
+			#segs[-1].set_z(self.z)
 
 		#Combine collinear segments
 		segs = seg_combine(segs)
@@ -174,6 +180,9 @@ class TLayer(Cura4Layer):
 			self.intersect_model([hl])
 			isecs = self.model_isecs[hl]['isec_points']
 			end = sorted(isecs, key=lambda p:distance(tseg.end_point, p))[0]
+
+			if (move_dist := end.distance(tseg.end_point)) > 1:
+				print(f"WARNING: moved end segment for {tseg} {move_dist:02f} mm")
 
 			#Not enough distance to intersect anything else
 			if end == tseg.start_point:
