@@ -115,9 +115,10 @@ class GCLine:
 		if self.code:
 			out.append(self.code)
 		out.extend(['{}{}'.format(k, v) for k,v in args.items()])
-		out.append(f'; [{self.lineno}]')
+		comment = f'; [{self.lineno}]'
 		if self.comment:
-			out.append('; ' + self.comment)
+			comment += f' {self.comment}'
+		out.append(comment)
 
 		return ' '.join(out)
 
