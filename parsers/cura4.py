@@ -171,7 +171,7 @@ def parse_3mf(filename):
 	mins = [float( 'inf')]*3
 	maxs = [float('-inf')]*3
 	for vertex in findall("./3mf:resources/3mf:object/3mf:mesh/3mf:vertices/3mf:vertex"):
-		vals = map(float, [v.get(a) for v in 'xyz'])
+		vals = map(float, [vertex.get(a) for a in 'xyz'])
 		mins = [min(old, new) for old, new in zip(mins, vals)]
 		maxs = [max(old, new) for old, new in zip(maxs, vals)]
 
