@@ -1,5 +1,5 @@
 import Geometry3D
-from Geometry3D import Vector, Point, Segment, intersection
+from Geometry3D import Vector, Point, Segment, intersection, Plane
 from gcline import GCLine, GCLines
 from dataclasses import make_dataclass
 from copy import copy
@@ -103,7 +103,6 @@ def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 
 
 
-
 class HalfLine(Geometry3D.HalfLine):
 	def __init__(self, a, b):
 		self._a = a
@@ -129,7 +128,7 @@ class GPoint(Point):
 		"""Pass Geometry3D.Point arguments or a gcline.GCLine and optionally a *z*
 		argument. If *z* is missing it will be set to 0."""
 		self.line = None
-		z = kwargs.get('z', 0)
+		z = kwargs.get('z', 0) or 0
 
 		if len(args) == 1:
 			if isinstance(args[0], GCLine):
@@ -142,11 +141,14 @@ class GPoint(Point):
 			elif isinstance(args[0], (list,tuple)):
 				super().__init__(args[0])
 
-			elif isinstance(args[0], GPoint):
+			elif isinstance(args[0], (GPoint, Point)):
 				super().__init__(
 					kwargs.get('x', args[0].x),
 					kwargs.get('y', args[0].y),
 					kwargs.get('z', args[0].z))
+
+			else:
+				raise ValueError(f'Invalid type for arg to GPoint: ({type(args[0])}) {args[0]}')
 
 		elif len(args) == 2:
 			super().__init__(*args)
@@ -157,14 +159,13 @@ class GPoint(Point):
 		else:
 			raise ValueError(f"Can't init GPoint with args {args}")
 
+	def __repr__(self):
+		return "{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
 
 	def as2d(self):
 		"""Return a copy of this point with *z* set to 0. If z is already 0, return self."""
-		if self.z == 0:
-			return self
-		c = copy(self)
-		c.z = 0
-		return c
+		if self.z == 0: return self
+		return self.copy(z=0)
 
 
 	def inside(self, seglist):
@@ -173,8 +174,13 @@ class GPoint(Point):
 		#We make a segment from this point to 0,0,0 and test intersections; if
 		# there are an even number, the point is inside the polygon.
 		test_seg = GSegment(self.as2d(), (0,0,0))
-		return len([s for s in seglist if intersection(test_seg, s.as_2d())]) % 2
+		return len([s for s in seglist if intersection(test_seg, s.as2d())]) % 2
 
+
+	def copy(self, z=None):
+		c = copy(self)
+		if z is not None: c.z = z
+		return c
 
 
 class GSegment(Geometry3D.Segment):
@@ -191,7 +197,7 @@ class GSegment(Geometry3D.Segment):
 		#Save *all* lines of gcode involved in this segment
 		self.gc_lines = GCLines(gc_lines) or GCLines()
 
-		#Instantiate a copy
+		#Argument |a| is a GSegment: instantiate a copy
 		if isinstance(a, GSegment):
 			if b is not None:
 				raise ValueError('Second argument must be None when first is a GSegment')
@@ -204,9 +210,9 @@ class GSegment(Geometry3D.Segment):
 			gc_lines = copyseg.gc_lines if gc_lines is None else gc_lines
 			is_extrude = copyseg.is_extrude or is_extrude
 
-		#If instantiating a copy, now a and b are set from the passed GSegment
+		#If instantiating a copy, |a| and |b| have been set from the passed GSegment
 		if isinstance(a, Point):
-			point1 = a
+			point1 = a if isinstance(a, GPoint) else GPoint(a)
 		elif isinstance(a, GCLine):
 			point1 = GPoint(a, z=z)
 			self.gc_line1 = a
@@ -220,7 +226,7 @@ class GSegment(Geometry3D.Segment):
 					" If this occurrs in a Jupyter notebook, it's because reloading messes things up. Try restarting the kernel.")
 
 		if isinstance(b, Point):
-			point2 = b
+			point2 = b if isinstance(b, GPoint) else GPoint(b)
 		elif isinstance(b, GCLine):
 			point2 = GPoint(b, z=z)
 			self.gc_line2 = b
@@ -229,6 +235,9 @@ class GSegment(Geometry3D.Segment):
 			point2 = GPoint(*b)
 		else:
 			raise ValueError(f"Arg b is type {type(b)} = {b} but that's not supported!")
+
+		if z is not None:
+			point1.z = point2.z = z
 
 		if point1 == point2:
 			raise ValueError("Cannot initialize a Segment with two identical Points\n"
@@ -256,7 +265,7 @@ class GSegment(Geometry3D.Segment):
 		return intersection(self.as2d(), other.as2d())
 
 
-	def as_2d(self):
+	def as2d(self):
 		if self.start_point.z == 0 and self.end_point.z == 0:
 			return self
 		return GSegment(self.start_point.as2d(), self.end_point.as2d())
@@ -275,7 +284,8 @@ class GSegment(Geometry3D.Segment):
 	def copy(self, start_point=None, end_point=None, z=None):
 		return GSegment(self, None,
 			start_point=start_point or self.start_point,
-			end_point=end_point     or self.end_point)
+			end_point=end_point     or self.end_point,
+			z=z)
 
 
 
@@ -284,7 +294,7 @@ class GSegment(Geometry3D.Segment):
 # --- Point
 @patch
 def __repr__(self:Point):
-	return "{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
+	return "!{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
 @patch
 def as2d(self:Point):
 	return Point(self.x, self.y, 0)

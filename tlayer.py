@@ -1,6 +1,6 @@
 import plotly, plotly.graph_objects as go
-from Geometry3D import Segment, Point, Plane, distance
-from geometry_helpers import GSegment, Geometry, Planes, seg_combine, gcode2segments, HalfLine
+from Geometry3D import Point, Segment, Plane, distance
+from geometry_helpers import GPoint, GSegment, Geometry, Planes, seg_combine, gcode2segments, HalfLine
 from typing import List
 from itertools import cycle
 from cura4layer import Cura4Layer
@@ -106,8 +106,8 @@ class TLayer(Cura4Layer):
 		plane_points = [(min_x, min_y), (mid_x, max_y), (max_x, max_y)]
 		bot_z        = z - self.layer_height/2
 		top_z        = z + self.layer_height/2
-		bottom       = Plane(*[Point(p[0], p[1], bot_z) for p in plane_points])
-		top          = Plane(*[Point(p[0], p[1], top_z) for p in plane_points])
+		bottom       = Plane(*[GPoint(p[0], p[1], bot_z) for p in plane_points])
+		top          = Plane(*[GPoint(p[0], p[1], top_z) for p in plane_points])
 		bottom.z     = bot_z
 		top.z        = top_z
 
@@ -173,16 +173,21 @@ class TLayer(Cura4Layer):
 		"""
 		end = None
 		newthread = []
+		ends = {}
 
 		for tseg in thread:
 			if end: tseg = tseg.copy(start_point=end)
-			hl = HalfLine(tseg.start_point, tseg.end_point)
-			self.intersect_model([hl])
-			isecs = self.model_isecs[hl]['isec_points']
-			end = sorted(isecs, key=lambda p:distance(tseg.end_point, p))[0]
+			end = min((Plane(tseg.end_point, gcseg.line.dv).intersection(gcseg) for
+				gcseg in self.geometry.segments), key=lambda ipoint:
+				ipoint.distance(tseg.end_point) if ipoint is not None else float('inf'))
+			# isecs = [Plane(tseg.end_point, gcseg.line.dv).intersection(gcseg) for
+			# 		gcseg in self.geometry.segments]
+			# end = min(isecs, key=lambda gcseg,ipoint: isec[1].distance(tseg.end_point))[1]
+			if end is None:
+				continue
 
-			if (move_dist := end.distance(tseg.end_point)) > 1:
-				print(f"WARNING: moved end segment for {tseg} {move_dist:02f} mm")
+			if (move_dist := tseg.end_point.distance(end)) > 1:
+				print(f"WARNING: moved end point for {tseg} {move_dist:02f} mm")
 
 			#Not enough distance to intersect anything else
 			if end == tseg.start_point:
@@ -192,6 +197,25 @@ class TLayer(Cura4Layer):
 			newthread.append(tseg)
 
 		return newthread
+
+		#for tseg in thread:
+		#	if end: tseg = tseg.copy(start_point=end)
+		#	hl = HalfLine(tseg.start_point, tseg.end_point)
+		#	self.intersect_model([hl])
+		#	isecs = self.model_isecs[hl]['isec_points']
+		#	end = sorted(isecs, key=lambda p:distance(tseg.end_point, p))[0]
+
+		#	if (move_dist := end.distance(tseg.end_point)) > 1:
+		#		print(f"WARNING: moved end point for {tseg} {move_dist:02f} mm")
+
+		#	#Not enough distance to intersect anything else
+		#	if end == tseg.start_point:
+		#		continue
+
+		#	tseg = tseg.copy(end_point=end)
+		#	newthread.append(tseg)
+
+		#return newthread
 
 
 	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
@@ -214,7 +238,7 @@ class TLayer(Cura4Layer):
 		return set(self.model_isecs[tseg]['isec_segs'])
 
 
-	def anchors(self, tseg: Segment) -> List[Point]:
+	def anchors(self, tseg: Segment) -> List[GPoint]:
 		"""Return a list of "anchor points" - Points at which the given thread
 		segment intersects the layer geometry, ordered by distance to the
 		end point of the thread segment (with the assumption that this the
@@ -259,10 +283,14 @@ class TLayer(Cura4Layer):
 				if not gcseg.is_extrude: continue
 
 				inter = gcseg.intersection(tseg)
-				if inter:
-					isecs['isec_segs'  ].append(gcseg)
-					isecs['isec_points'].append(inter)
-				else:
+				if inter is None:
 					isecs['nsec_segs'].append(gcseg)
+				else:
+					isecs['isec_segs'].append(gcseg)
+					if isinstance(inter, Point):
+						inter = GPoint(inter)
+						isecs['isec_points'].append(inter)
+					elif isinstance(inter, Segment):
+						isecs['isec_points'].extend(map(GPoint, inter[:]))
 
 			self.model_isecs[tseg] = isecs

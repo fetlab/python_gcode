@@ -30,6 +30,9 @@ ring_center = 36, 28
 # carrier?
 ring_radius = 92.5
 
+#Epsilon for various things
+epsilon = 0.25
+
 """
 Usage notes:
 	* The thread should be anchored on the bed such that it doesn't intersect the
@@ -330,7 +333,7 @@ class Printer:
 
 
 	def __repr__(self):
-		return f'Printer({self.bed}, {self.ring})'
+		return f'Printer(⚓︎{self.anchor}, ⌾ {self.ring._angle:.2f}°)'
 
 
 	def attr_changed(self, attr, old_value, new_value):
@@ -435,7 +438,7 @@ class Printer:
 		#First check to see if we have intersections at all; if not, we're done!
 		thr = self.anchor_to_ring()
 		if not any(thr.intersection(i) for i in avoid):
-			#rprint(f"Thread intersects 0 of {len(avoid)} geometry segments, don't need to move ring")
+			rprint(f"Thread intersects 0 of {len(avoid)} geometry segments, don't need to move ring")
 			return
 
 		#TODO: this is the computational geometry visibility problem and should be
@@ -459,31 +462,42 @@ class Printer:
 		target Point. By default sets the anchor to the intersection. Return the
 		rotation value."""
 		anchor = anchor or self.anchor.as2d()
-		# if target.as2d() == anchor.as2d():
-		# 	rprint('thread_intersect with target == anchor, doing nothing')
-		# 	return self.ring.angle
+		if target.as2d() != anchor.as2d():
+			#Form a half line (basically a ray) from the anchor through the target
+			rprint(f'HalfLine from {self.anchor} to {target}:')
+			hl = HalfLine(anchor, target.as2d())
+			rprint('\t', hl)
 
-		#Form a half line (basically a ray) from the anchor through the target
-		hl = HalfLine(anchor, target.as2d())
-		rprint(f'HalfLine from {self.anchor} to {target}:\n', hl)
+			#isecs = filter(None, map(hl.intersection, self.ring.geometry.segments))
 
-		isec = intersection(hl, self.ring.geometry)
-		if isec is None:
-			raise GCodeException(hl, "Anchor->target ray doesn't intersect ring")
+			isec = intersection(hl, self.ring.geometry)
+			rprint(f'\tIntersects with ring at {isec}')
+			if isec is None:
+				raise GCodeException(hl, "Anchor->target ray doesn't intersect ring")
 
-		#The intersection is always a Segment; we want the endpoint furthest from
-		# the anchor
-		ring_point = sorted(isec[:], key=lambda p: distance(anchor, p),
-				reverse=True)[0]
+			#The intersection is always a Segment; we want the endpoint furthest from
+			# the anchor
+			try:
+				ring_point = sorted(isec[:], key=lambda p: distance(anchor, p),
+						reverse=True)[0]
+			except NotImplementedError:
+				rprint(f'Error: isec is ({type(isec)}): {isec}')
+				raise
 
-		#Now we need the angle between center->ring and the x axis
-		ring_angle = degrees(atan2(ring_point.y - self.ring.center.y,
-															 ring_point.x - self.ring.center.x))
+			#Now we need the angle between center->ring and the x axis
+			ring_angle = degrees(atan2(ring_point.y - self.ring.center.y,
+																 ring_point.x - self.ring.center.x))
 
-		if move_ring:
-			self.ring.set_angle(ring_angle)
+			if move_ring:
+				rprint(f'Move ring from {self.ring.angle:02f}° to {ring_angle:02f}°')
+				self.ring.set_angle(ring_angle)
+
+		else:
+			rprint('thread_intersect with target == anchor, doing nothing')
+			ring_angle = self.ring.angle
 
 		if set_new_anchor:
+			rprint(f'thread_intersect set new anchor to {target}')
 			self.anchor = target
 
 		return ring_angle
@@ -730,7 +744,7 @@ class Step:
 		update_figure(fig, 'gc_segs', style)
 
 
-	def plot_thread(self, fig, start:Point, style=None):
+	def plot_thread(self, fig, start:GPoint, style=None):
 		#Plot a thread segment, starting at 'start', ending at the current anchor
 		if start == self.printer.anchor:
 			return
@@ -905,19 +919,19 @@ class Threader:
 
 	def gcode(self):
 		"""Return the gcode for all layers."""
-		r = []
+		r = self.gcode_file.preamble.lines.data if self.gcode_file.preamble else []
 		for steps_obj in self.layer_steps:
-			r.append(GCLine(fake=True, comment=f'==== Start layer {steps_obj.layer.number} ===='))
+			r.append(GCLine(fake=True, comment=f'==== Start layer {steps_obj.layer.layernum} ===='))
 			r.extend(steps_obj.gcode())
 		return r
 
 
-	def route_model(self, thread_list: List[GSegment]):
-		self.layer_steps = [self.route_layer(thread_list, layer) for layer in
-				self.gcode_file.layers]
+	def route_model(self, thread_list: List[GSegment], start_layer=None, end_layer=None):
+		self.layer_steps = [self.route_layer(thread_list, layer, self.printer.anchor)
+				for layer in self.gcode_file.layers[start_layer:end_layer]]
 
 
-	def route_layer(self, thread_list: List[GSegment], layer):
+	def route_layer(self, thread_list: List[GSegment], layer, start_anchor=None):
 		"""Goal: produce a sequence of "steps" that route the thread through one
 		layer. A "step" is a set of operations that diverge from the original
 		gcode; for example, printing all of the non-thread-intersecting segments
@@ -932,16 +946,15 @@ class Threader:
 
 		thread = thread_list.copy()
 
-		#Add bed anchor -> start point if not there already
-		if thread[0].start_point != self.printer.bed.anchor:
-			thread.insert(0, GSegment(self.printer.bed.anchor, thread[0].start_point))
+		if thread[0].start_point == self.printer.bed.anchor:
+			raise ValueError("Don't set the first thread anchor to the bed anchor")
 
 		#Is the first thread anchor above the top of this layer, or is the last thread anchor
 		# below it? If so, we can skip most of the processing; we just need to be
 		# sure the print head will avoid the thread.
 		bot_z = layer.z - layer.layer_height/2
 		top_z = layer.z + layer.layer_height/2
-		if thread[1].start_point.z > top_z or thread[-1].end_point.z < bot_z:
+		if thread[0].start_point.z > top_z or thread[-1].end_point.z < bot_z:
 			#We want to avoid the computational cost of making geometry from the
 			# entire layer if we're not doing anything with it, so we'll just make a
 			# rectangle of segments based on the layer extents and avoid that. Might
@@ -962,18 +975,29 @@ class Threader:
 		#If we got here, the first thread anchor is inside this layer, so we need
 		# to do the actual work
 
+		#If there's no start_anchor, we need to assume it's the Bed anchor
+		if start_anchor is None:
+			thread.insert(0, GSegment(self.printer.bed.anchor, thread[0].start_point))
+
 		rprint(f'Route {len(thread_list)}-segment thread through layer:\n  {layer}')
-		for i, tseg in enumerate(thread_list):
+		for i, tseg in enumerate(thread):
 			rprint(f'\t{i}. {tseg}')
 
 		#Get the thread segments to work on
 		thread = layer.flatten_thread(thread)
 
-		self.printer.layer.thread = thread
-
 		rprint('\nFlattened thread:')
 		for i, tseg in enumerate(thread):
 			rprint(f'\t{i}. {tseg} ({tseg.length():.2f} mm)')
+
+		if start_anchor:
+			rprint('+++++ START ANCHOR:', start_anchor)
+			start_anchor = start_anchor.copy(z=layer.z)
+			if start_anchor.distance(thread[0].start_point.copy(z=layer.z)) > epsilon:
+				thread.insert(0, GSegment(start_anchor, thread[0].start_point, z=layer.z))
+				rprint(f'Added start anchor seg: {thread[0]}')
+
+		self.printer.layer.thread = thread
 
 		#Collect segments that involve extrusion
 		extrude_segs = [gcseg for gcseg in layer.geometry.segments if gcseg.is_extrude]
@@ -986,10 +1010,11 @@ class Threader:
 
 		#Snap thread to anchors
 		snapped_thread = layer.anchor_snap(thread)
-		rprint('Snapped thread:')
-		for o,n in zip(thread, snapped_thread):
-			rprint(f'{o} → {n} ({o.start_point.distance(n.start_point)}, {o.end_point.distance(n.end_point)} mm)')
-		thread = snapped_thread
+		if snapped_thread:
+			rprint('Snapped thread end points:')
+			for o,n in zip(thread, snapped_thread):
+				rprint(f'Moved {o.end_point} to {n.end_point} ({o.end_point.distance(n.end_point)} mm)')
+			thread = snapped_thread
 
 		rprint(f'\n{len(thread)} thread segments in this layer:')
 		for i, tseg in enumerate(thread):
@@ -999,7 +1024,7 @@ class Threader:
 
 		#Find geometry that will not be intersected by any segments
 		# TODO: do these need to be half-lines from each anchor to the ring?
-		to_print = layer.non_intersecting(thread)
+		to_print = layer.non_intersecting(thread) if thread else layer.geometry.segments
 
 		try:
 			with steps.new_step(f'Move thread to avoid {len(to_print)}/{len(extrude_segs)} segments of non-intersecting geometry'):
@@ -1079,9 +1104,10 @@ class Threader:
 			rprint('[yellow]Done with thread for this layer[/];',
 					len([s for s in layer.geometry.segments if not s.printed]),
 					'gcode lines left')
+			rprint(f'Printer state: {self.printer}')
 
 		except Exception as e:
-			raise GCodeException((steps, e), "There was a problem")
+			raise GCodeException((steps, e), "There was a problem") from e
 
 		return steps
 
