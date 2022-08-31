@@ -225,6 +225,11 @@ class GPoint(Point):
 		return c
 
 
+	def move(self, vec):
+		"""Return a copy of this point moved by vector vec."""
+		return self.copy().move(vec)
+
+
 class GSegment(Geometry3D.Segment):
 	def __init__(self, a, b, z=None, gc_lines=None, is_extrude=False, **kwargs):
 		#Label whether this is an extrusion move or not
@@ -347,6 +352,7 @@ def xyz(self:Point):
 def xy(self:Point):
 	return self.x, self.y
 Point.inside = GPoint.inside
+Point.move   = GPoint.move
 
 
 # --- Segment
