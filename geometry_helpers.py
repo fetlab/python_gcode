@@ -1,12 +1,54 @@
 import Geometry3D
-from Geometry3D import Vector, Point, Segment, intersection, Plane
+from Geometry3D import Vector, Point, Segment, intersection
 from gcline import GCLine, GCLines
 from dataclasses import make_dataclass
 from copy import copy
 from fastcore.basics import patch
+from math import atan2, pi
+from functools import partial
+from typing import List
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
+
+def atan2p(y, x):
+	"""Return atan2(y,x), but ensure it's positive by adding 2pi if it's
+	negative."""
+	ang = atan2(y,x)
+	return ang if ang > 0 else ang + 2*pi
+
+
+def ccw(a:Point, b:Point, c:Point):
+	"""Compare the angles of a and b with respect to c as a center point. If a is
+	collinear to b, return 0; return negative if a is counter-clockwise from b,
+	and positive if it is clockwise."""
+	return atan2p(a.y-c.y, a.x-c.x) - atan2p(b.y-c.y, b.x-c.x)
+
+
+def ccw_dist(p,a,c):
+	"""Return CCW angular distance of point P from the line formed by a-c"""
+	v = atan2(a.y-c.y,a.x-c.x)-atan2(p.y-c.y,p.x-c.x)
+	return v if v > 0 else v + 2*pi
+
+
+def visibility(thread, avoid):
+	endpoints = set(sum([seg[:] for seg in avoid], ()))
+	non_isecs = endpoints.copy()
+	for p in endpoints:
+		h = HalfLine(thread.start_point, p)
+		for seg in avoid:
+			if seg.start_point == p or seg.end_point == p: continue
+			if h.intersection(seg):
+				non_isecs.remove(p)
+				break
+	return non_isecs
+
+
+def angsort(points: List[Point], ref:Segment):
+	"""Return points sorted counter-clockwise with respect to the reference
+	segment."""
+	return sorted(points, key=partial(ccw_dist, a=ref.end_point, c=ref.start_point), reverse=True)
+
 
 #Help in plotting
 def segs_xyz(*segs, **kwargs):
