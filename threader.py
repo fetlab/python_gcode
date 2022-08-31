@@ -3,7 +3,7 @@ from copy import deepcopy
 from Geometry3D import Circle, Vector, Segment, Point, intersection, distance
 from math import sin, cos, degrees, radians
 from typing import List
-from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy
+from geometry_helpers import GPoint, GSegment, HalfLine, segs_xy, visibility, angsort
 from fastcore.basics import store_attr
 from math import atan2
 from tlayer import TLayer
@@ -429,29 +429,23 @@ class Printer:
 	def thread_avoid(self, avoid: List[Segment]=[], move_ring=True):
 		"""Rotate the ring so that the thread is positioned to not intersect the
 		geometry in avoid. Return the rotation value."""
-		"""Except in the case that the anchor is still on the bed, the anchor is
-			guaranteed to be inside printed material (by definition). We might have
-			some cases where for a given layer there are two gcode regions (Cura sets
-			this up) and the anchor is in one of them. Probably the easiest thing
-			here is just to exhaustively test.
-		"""
-		#First check to see if we have intersections at all; if not, we're done!
 		thr = self.anchor_to_ring()
+
+		#First check to see if we have intersections at all; if not, we're done!
 		if not any(thr.intersection(i) for i in avoid):
 			rprint(f"Thread intersects 0 of {len(avoid)} geometry segments, don't need to move ring")
 			return
 
-		#TODO: this is the computational geometry visibility problem and should be
-		# done with a standard algorithm
-		#Next, try to move in increments around the current position to minimize movement time
-		# use angle2point()
-		for inc in range(10, 190, 10):
-			for ang in (self.ring.angle + inc, self.ring.angle - inc):
-				thr = GSegment(self.anchor, self.ring.angle2point(ang))
-				if not any(thr.intersection(i) for i in avoid):
-					if move_ring:
-						self.ring.set_angle(ang)
-					return ang
+		#Find segment end points where a line from the anchor point to that end
+		# point intersects no other segments.
+		non_isecs = visibility(thr, avoid)
+
+		if len(non_isecs) > 1:
+			#Find a point halfway between the closest two non_isec points, then move
+			# the ring so the thread is halfway.
+			non_isecs = angsort(non_isecs, ref=thr)
+			move_to = non_isecs[0].move(Vector(non_isecs[:2]) * .5)
+			return self.thread_intersect(move_to, set_new_anchor=False)
 
 		rprint("Couldn't find a way to avoid thread/geometry intersections")
 		return
@@ -1026,7 +1020,11 @@ class Threader:
 		# TODO: do these need to be half-lines from each anchor to the ring?
 		to_print = layer.non_intersecting(thread) if thread else layer.geometry.segments
 
+
 		try:
+			#****TODO: fix this to check if the returned angle is None; if so, divide
+			# to_print in some way, print one half, then move the thread and print
+			# the other half. ****
 			with steps.new_step(f'Move thread to avoid {len(to_print)}/{len(extrude_segs)} segments of non-intersecting geometry'):
 				self.printer.thread_avoid(to_print)
 
