@@ -429,11 +429,13 @@ class Printer:
 		"""Rotate the ring so that the thread is positioned to not intersect the
 		geometry in avoid. Return the rotation value."""
 		thr = self.anchor_to_ring()
+		rprint(f"anchor->ring: {thr}")
 
 		#First check to see if we have intersections at all; if not, we're done!
-		if not any(thr.intersection(i) for i in avoid):
+		isecs = [i for i in avoid if thr.intersection(i)]
+		if not any(isecs):
 			rprint(f"Thread intersects 0 of {len(avoid)} geometry segments, don't need to move ring")
-			return
+			return []
 
 		#Find segment end points where a line from the anchor point to that end
 		# point intersects no other segments.
@@ -443,11 +445,14 @@ class Printer:
 			#Find a point halfway between the closest two non_isec points, then move
 			# the ring so the thread is halfway.
 			non_isecs = angsort(non_isecs, ref=thr)
-			move_to = non_isecs[0].move(Vector(non_isecs[:2]) * .5)
-			return self.thread_intersect(move_to, set_new_anchor=False)
+			move_to = non_isecs[0].moved(Vector(*non_isecs[:2]) * .5)
+			self.thread_intersect(move_to, set_new_anchor=False)
+			return []
 
 		rprint("Couldn't find a way to avoid thread/geometry intersections")
-		return
+		rprint(f'Thread {thr} intersects {len(isecs)} segments:')
+		rprint(isecs)
+		return isecs
 
 
 	def thread_intersect(self, target, anchor=None, set_new_anchor=True, move_ring=True):
@@ -706,8 +711,6 @@ class Step:
 	def add(self, gcsegs:List[GSegment]):
 		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} unprinted gcsegs to Step')
 		for seg in gcsegs:
-			if 21821 in seg.gc_lines:
-				rprint(f'[yellow]---- Adding 21821 ({"p" if seg.printed else "n"}) to {self}:\n{seg}\n----')
 			if not seg.printed:
 				self.gcsegs.append(seg)
 				seg.printed = True
@@ -920,7 +923,7 @@ class Threader:
 
 
 	def route_model(self, thread_list: List[GSegment], start_layer=None, end_layer=None):
-		self.layer_steps = [self.route_layer(thread_list, layer, self.printer.anchor)
+		self.layer_steps = [self.route_layer(thread_list, layer, self.printer.anchor.copy(z=layer.z))
 				for layer in self.gcode_file.layers[start_layer:end_layer]]
 
 
@@ -1014,6 +1017,7 @@ class Threader:
 			rprint(f'\t{i}. {tseg} ({tseg.length():.2f} mm)')
 
 		rprint('[yellow]————[/] Start [yellow]————[/]')
+		rprint(f'Layer has {len(extrude_segs)} extruding segments')
 
 		#Find geometry that will not be intersected by any segments
 		# TODO: do these need to be half-lines from each anchor to the ring?
@@ -1025,9 +1029,23 @@ class Threader:
 			# to_print in some way, print one half, then move the thread and print
 			# the other half. ****
 			with steps.new_step(f'Move thread to avoid {len(to_print)}/{len(extrude_segs)} segments of non-intersecting geometry'):
-				self.printer.thread_avoid(to_print)
+				isecs = self.printer.thread_avoid(to_print)
 
-			with steps.new_step('Print non-intersecting geometry') as s:
+			if isecs:
+				rprint(f"[red]{len(isecs)} intersections!")
+				new_print = set(to_print) - set(isecs)
+				with steps.new_step("Print", f'{len(new_print)}/{len(extrude_segs)}',
+						"segments thread doesn't intersect") as s:
+					s.add(new_print)
+
+				with steps.new_step(f'Move thread to avoid {len(isecs)} remaining segments'):
+					self.isecs2 = self.printer.thread_avoid(isecs)
+					self.curr_thread = self.printer.anchor_to_ring()
+					if self.isecs2:
+						raise ValueError("oh noes")
+					to_print = isecs
+
+			with steps.new_step(f'Print {len(to_print)} segments of non-intersecting geometry') as s:
 				s.add(to_print)
 
 			segs_left = [s for s in extrude_segs if not s.printed]
