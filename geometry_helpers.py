@@ -37,7 +37,8 @@ def visibility(thread, avoid):
 	for p in endpoints:
 		h = HalfLine(thread.start_point, p)
 		for seg in avoid:
-			if seg.start_point == p or seg.end_point == p: continue
+			if thread.start_point in seg or seg.start_point == p or seg.end_point == p:
+				continue
 			if h.intersection(seg):
 				non_isecs.remove(p)
 				break
