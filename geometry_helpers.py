@@ -352,7 +352,6 @@ def xyz(self:Point):
 def xy(self:Point):
 	return self.x, self.y
 Point.inside = GPoint.inside
-Point.move   = GPoint.move
 
 
 # --- Segment
