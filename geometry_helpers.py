@@ -225,7 +225,7 @@ class GPoint(Point):
 		return c
 
 
-	def move(self, vec):
+	def moved(self, vec):
 		"""Return a copy of this point moved by vector vec."""
 		return self.copy().move(vec)
 
