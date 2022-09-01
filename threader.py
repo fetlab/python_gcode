@@ -337,7 +337,6 @@ class Printer:
 
 
 	def attr_changed(self, attr, old_value, new_value):
-		return
 		if attr[1] in 'xyz':
 			setattr(self.ring, attr[1], new_value)
 			if attr[1] in 'xy':
