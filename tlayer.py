@@ -1,9 +1,13 @@
+import logging
 import plotly, plotly.graph_objects as go
 from Geometry3D import Point, Segment, Plane, distance
-from geometry_helpers import GPoint, GSegment, Geometry, Planes, seg_combine, gcode2segments, HalfLine
-from typing import List
+from geometry_helpers import GPoint, GSegment, Geometry, Planes, seg_combine, gcode2segments
+from typing import List, Set
 from itertools import cycle
 from cura4layer import Cura4Layer
+from fastcore.basics import listify
+
+log = logging.getLogger('threader')
 
 class TLayer(Cura4Layer):
 	"""A gcode layer that has thread in it."""
@@ -135,7 +139,8 @@ class TLayer(Cura4Layer):
 			#Is the thread segment entirely below or above the layer? If so, skip it.
 			if((tseg.start_point.z <  bot.z and tseg.end_point.z <  bot.z) or
 				 (tseg.start_point.z >= top.z and tseg.end_point.z >= top.z)):
-				print(f'Thread segment {tseg} endpoints not in layer')
+				log.debug(f'{i}. {tseg} endpoints not in layer',
+						extra=dict(style={'line-height':'normal'}))
 				continue
 
 
@@ -164,37 +169,46 @@ class TLayer(Cura4Layer):
 		return segs
 
 
-	def anchor_snap(self, thread: List[Segment]) -> List[GSegment]:
-		"""Return a new list of thread segments, modified as follows:
+	def geometry_snap(self, thread: List[GSegment]) -> List[GSegment]:
+		"""Return new thread segments, modified as follows:
 			* Each segment end point is moved to its closest intersection with
-				printed layer geometry
+				printed layer geometry.
 			* Each segment start point (except the first segment's) is moved to the
-				end point of the preceding segment
+				end point of the preceding segment.
+			* If the closest intersection is the same as the start point, then no new
+				segment is generated.
+			The return value is a dict: {original_segment: new_segment or None}
 		"""
 		end = None
-		newthread = []
-		ends = {}
+		newthread = {}
 
 		for tseg in thread:
-			if end: tseg = tseg.copy(start_point=end)
-			end = min((Plane(tseg.end_point, gcseg.line.dv).intersection(gcseg) for
-				gcseg in self.geometry.segments), key=lambda ipoint:
-				ipoint.distance(tseg.end_point) if ipoint is not None else float('inf'))
-			# isecs = [Plane(tseg.end_point, gcseg.line.dv).intersection(gcseg) for
-			# 		gcseg in self.geometry.segments]
-			# end = min(isecs, key=lambda gcseg,ipoint: isec[1].distance(tseg.end_point))[1]
-			if end is None:
-				continue
+			if end and tseg.start_point != end: tseg = tseg.copy(start_point=end)
+			mindist = float('inf')
+			for s in self.geometry.segments:
+				if tseg.end_point in s:
+					log.debug(f'{tseg.end_point} in segment {s}')
+					end = tseg.end_point
+					break
+				isec = Plane(tseg.end_point, s.line.dv).intersection(s)
+				if isec is None: continue
+				dist = isec.distance(tseg.end_point)
+				if dist < mindist:
+					mindist = dist
+					end = isec
+
+			#No intersections with anything
+			if end is None: raise ValueError(f"Can't snap segment {tseg}")
 
 			if (move_dist := tseg.end_point.distance(end)) > 1:
-				print(f"WARNING: moved end point for {tseg} {move_dist:02f} mm")
+				log.debug(f"WARNING: moved end point for {tseg} {move_dist:02f} mm")
 
 			#Not enough distance to intersect anything else
 			if end == tseg.start_point:
-				continue
-
-			tseg = tseg.copy(end_point=end)
-			newthread.append(tseg)
+				log.debug(f'Closest point for {tseg} is its start point, dropping it')
+				newthread[tseg] = None
+			else:
+				newthread[tseg] = tseg.copy(end_point=end)
 
 		return newthread
 
@@ -218,24 +232,28 @@ class TLayer(Cura4Layer):
 		#return newthread
 
 
-	def non_intersecting(self, thread: List[Segment]) -> List[GSegment]:
+	def non_intersecting(self, thread: List[Segment]) -> Set[GSegment]:
 		"""Return a list of GSegments which the given thread segments do not
 		intersect."""
+		thread = listify(thread)
 		self.intersect_model(thread)
 
 		#First find all *intersecting* GSegments
-		intersecting = set.union(*[set(self.model_isecs[tseg]['isec_segs']) for tseg in thread])
+		intersecting = self.intersecting(thread)
 
 		#And all non-intersecting GSegments
-		non_intersecting = set.union(*[set(self.model_isecs[tseg]['nsec_segs']) for tseg in thread])
+		non_intersecting = set.union(*[self.model_isecs[tseg]['nsec_segs'] for tseg in thread])
 
 		#And return the difference
 		return non_intersecting - intersecting
 
 
-	def intersecting(self, tseg: GSegment) -> List[GSegment]:
-		"""Return a list of GSegments which the given thread segment intersects."""
-		return set(self.model_isecs[tseg]['isec_segs'])
+	def intersecting(self, thread: GSegment|List[GSegment]) -> Set[GSegment]:
+		"""Return a set of GSegments which the given thread segment(s) intersect."""
+		thread = listify(thread)
+		if not thread: return set()
+		self.intersect_model(thread)
+		return set.union(*[self.model_isecs[t]['isec_segs'] for t in thread])
 
 
 	def anchors(self, tseg: Segment) -> List[GPoint]:
@@ -243,18 +261,18 @@ class TLayer(Cura4Layer):
 		segment intersects the layer geometry, ordered by distance to the
 		end point of the thread segment (with the assumption that this the
 		"true" anchor point, as the last location the thread will be stuck down."""
-		anchors = self.model_isecs[tseg]['isec_points']
+		anchors = self.model_isecs[tseg]['isec_points'].copy()
 		entry   = tseg.start_point
 		exit    = tseg.end_point
 
-		print(f'anchors with thread segment: {tseg}')
-		print(f'isec anchors: {anchors}')
+		log.debug(f'anchors with thread segment: {tseg}')
+		log.debug(f'isec anchors: {anchors}')
 		if entry in self.in_out and entry.inside(self.geometry.outline):
-			anchors.append(entry)
-			print(f'Entry anchor: {entry}')
+			anchors.add(entry)
+			log.debug(f'Entry anchor: {entry}')
 		if exit in self.in_out and exit.inside(self.geometry.outline):
-			anchors.append(exit)
-			print(f'Exit anchor: {exit}')
+			anchors.add(exit)
+			log.debug(f'Exit anchor: {exit}')
 
 		return sorted(anchors, key=lambda p:distance(tseg.end_point, p))
 
@@ -275,8 +293,8 @@ class TLayer(Cura4Layer):
 				continue
 
 			isecs = {
-				'nsec_segs': [],                    # Non-intersecting gcode segments
-				'isec_segs': [], 'isec_points': [], # Intersecting gcode segments and locations
+				'nsec_segs': set(),                       # Non-intersecting gcode segments
+				'isec_segs': set(), 'isec_points': set(), # Intersecting gcode segments and locations
 			}
 
 			for gcseg in self.geometry.segments:
@@ -284,13 +302,13 @@ class TLayer(Cura4Layer):
 
 				inter = gcseg.intersection(tseg)
 				if inter is None:
-					isecs['nsec_segs'].append(gcseg)
+					isecs['nsec_segs'].add(gcseg)
 				else:
-					isecs['isec_segs'].append(gcseg)
+					isecs['isec_segs'].add(gcseg)
 					if isinstance(inter, Point):
 						inter = GPoint(inter)
-						isecs['isec_points'].append(inter)
+						isecs['isec_points'].add(inter)
 					elif isinstance(inter, Segment):
-						isecs['isec_points'].extend(map(GPoint, inter[:]))
+						isecs['isec_points'].update(map(GPoint, inter[:]))
 
 			self.model_isecs[tseg] = isecs
