@@ -1,15 +1,33 @@
 import Geometry3D
-from Geometry3D import Vector, Point, Segment, intersection
+from Geometry3D import Vector, Point, Segment, intersection, Line, Plane
 from gcline import GCLine, GCLines
 from dataclasses import make_dataclass
 from copy import copy
 from fastcore.basics import patch
 from math import atan2, pi
 from functools import partial
-from typing import List
+from typing import List, Dict
+from collections import defaultdict
+from more_itertools import flatten, bucket
+from util import sign
+
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
+
+
+def min_max_xyz_points(points):
+	x,y,z = list(zip(*[p[:] for p in points]))
+	return (min(x), min(y), min(z)), (max(x), max(y), max(z))
+
+def min_max_xyz_segs(segs):
+	"""Return (minx, miny, minz), (maxx, maxy, maxz)"""
+	x,y,z = list(zip(*
+				[((seg.start_point.x, seg.end_point.x),
+					(seg.start_point.y, seg.end_point.y),
+					(seg.start_point.z, seg.end_point.z)) for seg in segs]))
+	return (min(x), min(y), min(z)), (max(x), max(y), max(z))
+
 
 def atan2p(y, x):
 	"""Return atan2(y,x), but ensure it's positive by adding 2pi if it's
@@ -45,28 +63,88 @@ def visibility(thread, avoid):
 	return non_isecs
 
 
+def visibility2(origin:Point, query:List[Segment]):
+	"""Given a point origin and a query list of segments, find endpoints of the
+	segments that are visible from origin (no intersections between origin and
+	the endpoints). Return a dict of those endpoints and the segments associated
+	with them: {endpoint: [segments]}."""
+	endpoints = defaultdict(list)
+	for seg in query:
+		endpoints[seg.start_point].append(seg)
+		endpoints[seg.end_point  ].append(seg)
+	non_isecs = endpoints.copy()
+	non_isecs.pop(origin, None)
+	for p,point_segs in endpoints.items():
+		if p not in non_isecs: continue
+		h = HalfLine(origin, p)
+		for seg in query:
+			if origin in seg or seg.start_point == p or seg.end_point == p:
+				continue
+			if h.intersection(seg):
+				non_isecs.pop(p, None)
+				break
+	return non_isecs
+
+
+def avoid_visible(origin:Point, visible:Dict, avoid_by=1):
+	"""Given a point origin and a visibilty dict as returned by visibility2,
+	return points where for each point:
+		* the point is avoid_by away from the endpoints of visible segments
+		* a half-line between origin and the point does not intersect any segment in query
+	"""
+	vis_segs   = set(flatten(visible.values()))
+	tan_points = set(flatten([tangent_points(p, avoid_by, origin) for p in visible]))
+	isec_points = []
+	for p in tan_points:
+		for seg in vis_segs:
+			isec = GSegment(origin, p).intersection(seg)
+			if isec is None or isec == origin:
+				isec_points.append(p)
+	return set(isec_points)
+	# return {p for p in tan_points if not any(
+	# 	GSegment(origin, p).intersection(seg) for seg in vis_segs)}
+
+
+def point_plane_comp(point, plane):
+	"""Return whether point is below (-1), on (0), or above (1) plane."""
+	isec = Line(point, plane.n).intersection(plane)
+	return sign(Vector(isec, point) * plane.n)
+
+
+def split_segs(segments, by:Segment):
+	"""Split the given segments by a plane defined by using the segment 'by' as
+	the origin and direction vector for the plance. Return lists
+	(same_side, opp_side), where segments in same_side have at least one point in
+	the direction of 'by' and segments in opp_side are the rest."""
+	plane = Plane(by.start_point, by.line.dv)
+	b = bucket(segments, key=lambda s:plane.pointcmp(s[0]) >= 0 or plane.pointcmp(s[1]) >= 0)
+	return set(b[True]), set(b[False])
+
+
+
+
+#Source: https://math.stackexchange.com/questions/543496/
+def tangent_points(center:Point, radius, p:Point):
+	"""Given a circle at center with radius, return the points on the circle that
+	form tanget lines with point p."""
+	dx, dy = p.x-center.x, p.y-center.y
+	dxr, dyr = -dy, dx
+	d = (dx**2 + dy**2)**.5
+	if d < radius:
+		raise ValueError('Point p is inside the circle')
+
+	rho = radius/d
+	ad = rho**2
+	bd = rho*(1-rho**2)**.5
+	return (
+		GPoint(center.x + ad*dx + bd*dxr, center.y + ad*dy + bd*dyr, center.z),
+		GPoint(center.x + ad*dx - bd*dxr, center.y + ad*dy - bd*dyr, center.z))
+
+
 def angsort(points: List[Point], ref:Segment):
 	"""Return points sorted counter-clockwise with respect to the reference
 	segment."""
 	return sorted(points, key=partial(ccw_dist, a=ref.end_point, c=ref.start_point), reverse=True)
-
-
-#Help in plotting
-def segs_xyz(*segs, **kwargs):
-	#Plot gcode segments. The 'None' makes a break in a line so we can use
-	# just one add_trace() call.
-	x, y, z = [], [], []
-	for s in segs:
-		x.extend([s.start_point.x, s.end_point.x, None])
-		y.extend([s.start_point.y, s.end_point.y, None])
-		z.extend([s.start_point.z, s.end_point.z, None])
-	return dict(x=x, y=y, z=z, **kwargs)
-
-
-def segs_xy(*segs, **kwargs):
-	d = segs_xyz(*segs, **kwargs)
-	del(d['z'])
-	return d
 
 
 #Combine subsequent segments on the same line
@@ -165,7 +243,6 @@ class HalfLine(Geometry3D.HalfLine):
 		return "H({}, {})".format(self.point, self.vector)
 
 
-
 class GPoint(Point):
 	def __init__(self, *args, **kwargs):
 		"""Pass Geometry3D.Point arguments or a gcline.GCLine and optionally a *z*
@@ -249,11 +326,10 @@ class GSegment(Geometry3D.Segment):
 		if isinstance(a, GSegment):
 			if b is not None:
 				raise ValueError('Second argument must be None when first is a GSegment')
-			if not ('start_point' in kwargs or 'end_point' in kwargs):
-				raise ValueError('Provide explicit start_point and/or end_point argument')
 			copyseg = a
-			a = kwargs.get('start_point', copyseg.start_point)
-			b = kwargs.get('end_point', copyseg.end_point)
+			#Make copies of the start/end points to ensure we avoid accidents
+			a = copy(kwargs.get('start_point', copyseg.start_point))
+			b = copy(kwargs.get('end_point',   copyseg.end_point))
 			z = a.z if z is None else z
 			gc_lines = copyseg.gc_lines if gc_lines is None else gc_lines
 			is_extrude = copyseg.is_extrude or is_extrude
@@ -301,12 +377,18 @@ class GSegment(Geometry3D.Segment):
 
 	def __repr__(self):
 		if not(self.gc_line1 and self.gc_line2):
-			return super().__repr__()
-		return "<{}[{}] {}:{}←→{}:{}>".format(
+			return "<{}←→{} ({:.2f} mm)>".format(self.start_point, self.end_point,
+					self.length())
+		return "<{}[{:>2}] {}:{}←→{}:{} ({:.2f} mm)>".format(
 				'S' if self.printed else 's',
 				len(self.gc_lines),
 				self.gc_line1.lineno, self.start_point,
-				self.gc_line2.lineno, self.end_point)
+				self.gc_line2.lineno, self.end_point,
+				self.length())
+
+	def intersects(self, check:List[Segment]):
+		"""Return whether this GSegment intersects anything in check."""
+		return any(self.intersection(seg) for seg in check)
 
 
 	def intersection2d(self, other):
@@ -376,3 +458,11 @@ def xy(self:Segment):
 @patch
 def __repr__(self:Vector):
 	return "V({:.2f}, {:.2f}, {:.2f})".format(*self._v)
+
+
+# --- Plane
+@patch
+def pointcmp(self:Plane, point:Point):
+	"""Return whether point is below (-1), on (0), or above (1) plane."""
+	isec = Line(point, self.n).intersection(self)
+	return sign(Vector(isec, point) * self.n)
