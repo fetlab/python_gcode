@@ -14,7 +14,7 @@ from util import Saver, find
 from enum import Enum
 from gcode import GcodeFile
 from rich import print
-from more_itertools import grouper, pairwise, partition, bucket
+from more_itertools import grouper, bucket
 
 import logging
 from lablogging   import AccordionHandler
@@ -367,22 +367,6 @@ class Printer:
 		"""Return a copy of this Printer object, capturing the state."""
 		return deepcopy(self)
 
-		# bed = Bed(self.bed.anchor, self.bed.size)
-		# bed.x, bed.y = self.bed.x, self.bed.y
-
-		# ring = Ring(self.ring.radius, self.ring.angle, self.ring.center)
-
-		# printer = Printer(self.z)
-		# printer.bed = bed
-		# printer.ring = ring
-		# printer.anchor = self.anchor
-		# printer.thread_seg = self.thread_seg
-		# printer.extruder_no = self.extruder_no
-		# printer.extrusion_mode = self.extrusion_mode
-		# printer._x, printer._y, printer._z = self._x, self._y, self._z
-
-		# return printer
-
 
 	def gcode(self, lines) -> List:
 		"""Return gcode. lines is a list of GCLines involved in the current step.
@@ -421,8 +405,6 @@ class Printer:
 				gc.extend(newlines)
 
 		return gc
-		#filter gc to drop None values
-		#return list(filter(None, gc))
 
 
 	def execute_gcode(self, gcline:GCLine):
@@ -443,18 +425,6 @@ class Printer:
 		to the ring."""
 		return GSegment(self.anchor, self.ring.point, z=self.z)
 
-
-	# TODO TODO TODO
-	"""New approach to thread avoid:
-		1. Use visibility2(anchor, segs) on the segment(s) that the anchor is
-			 snapped to and move the thread to avoid those segments.
-		2. Print those segments.
-		3. Find segments not intersecting thread, print them.
-		4. Use visibilty2() on the remaining segments, move thread, print.
-
-		The point here is that there is no reason to treat the existing
-		thread->ring trajectory as important.
-	"""
 
 	def thread_avoid(self, avoid: Collection[Segment]=[], move_ring=True, avoid_by=1):
 		"""Try to rotate the ring so that the thread is positioned to not intersect the
@@ -821,30 +791,6 @@ class Step:
 			return False
 
 
-	#def plot(self, prev_layer:TLayer=None, prev_layer_only_outline=True):
-	#	print(f'Step {self.number}: {step.name}')
-	#	fig = go.Figure()
-
-	#	#Plot the bed
-	#	self.printer.bed.plot(fig)
-
-	#	#Plot the outline of the previous layer, if provided
-	#	if prev_layer:
-	#		prev_layer.plot(fig,
-	#				move_colors    = [self.style['old_layer']['line']['color']],
-	#				extrude_colors = [self.style['old_layer']['line']['color']],
-	#				only_outline   = prev_layer_only_outline,
-	#		)
-
-	#	#Print the entire thread path that will be routed this layer
-	#	if hasattr(self.printer.layer, 'thread'):
-	#		fig.add_trace(go.Scatter(**segs_xy(*self.printer.layer.thread,
-	#			mode='lines', **self.style['all_thread'])))
-
-	#	#Plot the thread from the layer starting anchor (or bed anchor if none) to
-	#	# the
-
-
 	def plot_gcsegments(self, fig, gcsegs=None, style=None):
 		#Plot gcode segments. The 'None' makes a break in a line so we can use
 		# just one add_trace() call.
@@ -1195,25 +1141,6 @@ class Threader:
 					s.add(anchorsegs)
 			else:
 				rprint("[yellow]No segments contain the anchor")
-			#endpoints = angsort(set(sum([seg[:] for seg in anchorsegs], ())) - {a},
-			#		ref=self.printer.anchor_to_ring())
-			#if endpoints:
-			#	#These can be viewed as a collection of segments starting at the
-			#	# anchor, so any two angularly adjacent endpoints will have visibility
-			#	# in between them
-			#	avoided = False
-			#	for e1, e2 in pairwise(endpoints):
-			#		if e1.distance(e2) > avoid_epsilon * 2:
-			#			avoided = True
-			#			move_to = e1.moved(Vector(e1, e2) * .5)
-			#			with steps.new_step(f"Move thread to avoid {len(anchorsegs)} segments fixing start anchor"):
-			#					self.printer.thread_intersect(move_to, set_new_anchor=False)
-			#			break
-			#	if not avoided: raise ValueError("Couldn't avoid fixing segments")
-			#	with steps.new_step("Print anchor-fixing segments") as s:
-			#		s.add(anchorsegs)
-			#else:
-			#	rprint("[yellow]No segments contain the anchor")
 
 		#Drop thread segments that are too short to worry about
 		thread = [tseg for tseg in thread if tseg.length() > epsilon]
@@ -1242,36 +1169,6 @@ class Threader:
 						"segments thread doesn't intersect") as s:
 					s.add(to_print)
 			to_print = isecs
-
-
-
-
-		# with steps.new_step(f'Move thread to avoid {len(to_print)}/{len(extrude_segs)} segments of non-intersecting geometry'):
-		# 	isecs = self.printer.thread_avoid(to_print)
-		# self.printer.debug_non_isecs = []
-
-		# if isecs:
-		# 	new_print = set(to_print) - set(isecs)
-		# 	self.new_print = new_print
-		# 	with steps.new_step(f"Can't avoid all; move thread to avoid {len(new_print)} segments"):
-		# 		self.isecs2 = self.printer.thread_avoid(new_print)
-		# 		if self.isecs2:
-		# 			raise ValueError("oh noes")
-
-		# 	with steps.new_step("Print", f'{len(new_print)}/{len(extrude_segs)}',
-		# 			"segments thread doesn't intersect") as s:
-		# 		s.add(new_print)
-
-		# 	with steps.new_step(f'Move thread to avoid {len(isecs)} remaining segments'):
-		# 		self.isecs3 = self.printer.thread_avoid(isecs)
-		# 		self.curr_thread = self.printer.anchor_to_ring()
-		# 		if self.isecs3:
-		# 			raise ValueError("oh noes")
-		# 		to_print = isecs
-		# 	self.printer.debug_non_isecs = []
-
-		# with steps.new_step(f'Print {len(to_print)} segments of non-intersecting geometry') as s:
-		# 	s.add(to_print)
 
 		rprint(f"[red]———[/] Now process {len(thread)} thread segments [red]———[/]")
 		self.debug_threads = thread
