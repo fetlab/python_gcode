@@ -11,7 +11,10 @@ class Layer():
 	def __repr__(self):
 		#If this layer contains some X/Y moves, print the extents
 		if self.has_moves:
-			return f'<Layer {self.layernum} at Z={self.z}; corners: {self.extents()}; {len(self.lines)} lines>'
+			return '\n'.join((
+				f'<Layer {self.layernum} at Z={self.z};',
+				f'  corners: {self.extents()};',
+				f'  {len(self.lines)} lines>'))
 		#Otherwise don't!
 		return f'<Layer {self.layernum} at Z={self.z}; {len(self.lines)} lines; no moves>'
 
