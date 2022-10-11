@@ -1,12 +1,79 @@
 from collections  import namedtuple
+import inspect
 from time         import time
-from functools    import wraps
+from functools    import wraps, reduce
 from operator     import itemgetter
+from pathlib      import Path
 
 Point3 = namedtuple('Point3', 'x y z')
 
+
+class GCodeException(Exception):
+	"""Utility class so we can get an object for debugging easily. Use in this
+	code like:
+
+		raise GCodeException(segs, 'here are segments')
+
+	then (e.g. in Jupyter notebook):
+
+		try:
+			steps.plot()
+		except GCodeException as e:
+			print(len(e.obj), 'segments to print')
+	"""
+
+	def __init__(self, obj, message):
+		self.obj = obj
+		self.message = message
+
+
+
+#https://stackoverflow.com/a/31174427/49663
+def rgetattr(obj, attr, *args):
+	def _getattr(obj, attr):
+		return getattr(obj, attr, *args)
+	return reduce(_getattr, [obj] + attr.split('.'))
+def rsetattr(obj, attr, val):
+	pre, _, post = attr.rpartition('.')
+	return setattr(rgetattr(obj, pre) if pre else obj, post, val)
+
+
+#Modified from https://stackoverflow.com/a/2123602/49663
+def attrhelper(attr, after=None):
+	"""Generate functions which get and set the given attr. If the parent object
+	has a '.attr_changed' function or if after is defined, and the attr changes,
+	call that function with arguments (attr, old_value, new_value):
+
+		class Foo:
+			a = property(**attrsetter('_a'))
+			b = property(**attrsetter('_b'))
+			def attr_changed(self, attr, old_value, new_value):
+				print(f'{attr} changed from {old_value} to {new_value}')
+
+	Uses rgetattr and rsetattr to work with nested values like '_a.x'.
+	"""
+	def set_any(self, value):
+		old_value = rgetattr(self, attr)
+		rsetattr(self, attr, value)
+		if value != old_value:
+			f = getattr(self, 'attr_changed', after) or (lambda a,b,c: 0)
+			f(attr, old_value, value)
+
+	def get_any(self):
+		return rgetattr(self, attr)
+
+	return {'fget': get_any, 'fset': set_any}
+
 def sign(n):
 	return -1 if n < 0 else (1 if n > 0 else 0)
+
+
+def	linf(frame=0):
+	"""Return a string of information about the calling line in the file, or
+	frame number of frames previous."""
+	_, fn, ln, func, ctx, _ = inspect.stack()[frame+1]
+	return f'[{Path(fn).stem}' + ('' if func == '<module>' else f'.{func}') + f':{ln}]'
+
 
 def construct_lines_rel2abs(gc_lines, start=0):
 	"""Construct a list of GCLine objects, replacing the existing E values with
