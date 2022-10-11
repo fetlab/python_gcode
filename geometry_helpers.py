@@ -1,52 +1,19 @@
-import Geometry3D
-from Geometry3D import Vector, Point, Segment, intersection, Line, Plane
-from gcline import GCLine, GCLines
+from Geometry3D import Vector, Point, Segment, Line, Plane
+from gcline import GCLines
 from dataclasses import make_dataclass
-from copy import copy
 from fastcore.basics import patch
-from math import atan2, pi
-from functools import partial
-from typing import List, Dict
+from typing import List, Dict, Collection
 from collections import defaultdict
 from more_itertools import flatten, bucket
-from util import sign
+
+from geometry.gpoint import GPoint
+from geometry.gsegment import GSegment
+from geometry.ghalfline import GHalfLine, GHalfLine as HalfLine
+from geometry.utils import tangent_points, sign, min_max_xyz_segs, angsort
 
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
 Planes   = make_dataclass('Planes',   ['top', 'bottom'])
-
-
-def min_max_xyz_points(points):
-	x,y,z = list(zip(*[p[:] for p in points]))
-	return (min(x), min(y), min(z)), (max(x), max(y), max(z))
-
-def min_max_xyz_segs(segs):
-	"""Return (minx, miny, minz), (maxx, maxy, maxz)"""
-	x,y,z = list(zip(*
-				[((seg.start_point.x, seg.end_point.x),
-					(seg.start_point.y, seg.end_point.y),
-					(seg.start_point.z, seg.end_point.z)) for seg in segs]))
-	return (min(x), min(y), min(z)), (max(x), max(y), max(z))
-
-
-def atan2p(y, x):
-	"""Return atan2(y,x), but ensure it's positive by adding 2pi if it's
-	negative."""
-	ang = atan2(y,x)
-	return ang if ang > 0 else ang + 2*pi
-
-
-def ccw(a:Point, b:Point, c:Point):
-	"""Compare the angles of a and b with respect to c as a center point. If a is
-	collinear to b, return 0; return negative if a is counter-clockwise from b,
-	and positive if it is clockwise."""
-	return atan2p(a.y-c.y, a.x-c.x) - atan2p(b.y-c.y, b.x-c.x)
-
-
-def ccw_dist(p,a,c):
-	"""Return CCW angular distance of point P from the line formed by a-c"""
-	v = atan2(a.y-c.y,a.x-c.x)-atan2(p.y-c.y,p.x-c.x)
-	return v if v > 0 else v + 2*pi
 
 
 def visibility(thread, avoid):
@@ -86,29 +53,114 @@ def visibility2(origin:Point, query:List[Segment]):
 	return non_isecs
 
 
-def avoid_visible(origin:Point, visible:Dict, avoid_by=1):
+def avoid_visible(origin:Point, visible:Dict, query:Collection[Segment], avoid_by=1):
 	"""Given a point origin and a visibilty dict as returned by visibility2,
 	return points where for each point:
 		* the point is avoid_by away from the endpoints of visible segments
 		* a half-line between origin and the point does not intersect any segment in query
 	"""
-	vis_segs   = set(flatten(visible.values()))
 	tan_points = set(flatten([tangent_points(p, avoid_by, origin) for p in visible]))
-	isec_points = []
+	isec_points = set()
 	for p in tan_points:
-		for seg in vis_segs:
+		include = True
+		for seg in query:
 			isec = GSegment(origin, p).intersection(seg)
-			if isec is None or isec == origin:
-				isec_points.append(p)
-	return set(isec_points)
-	# return {p for p in tan_points if not any(
-	# 	GSegment(origin, p).intersection(seg) for seg in vis_segs)}
+			if isec is not None and isec != origin:
+				include = False
+				break
+			if isec is not None and isec != origin:
+				include = False
+				break
+		if include: isec_points.add(p)
+	return isec_points
 
 
-def point_plane_comp(point, plane):
-	"""Return whether point is below (-1), on (0), or above (1) plane."""
-	isec = Line(point, plane.n).intersection(plane)
-	return sign(Vector(isec, point) * plane.n)
+
+def visibility3(origin:Point, query:Collection[Segment], avoid_by=1):
+	"""Return a tuple:
+		(the set of endpoints of Segments in query that are visible from origin,
+			segments in query that are "in the way" of other endpoints)
+
+		Visibility for each point means:
+			* a half-line between origin and the point does not intersect any segment
+				in query
+			* the point is avoid_by away from the endpoint of any segment in query
+	"""
+	endpoints = set(flatten(query))
+
+	#Find points that form a tanget line between the origin and a circle of
+	# avoid_by radius around each end point
+	tanpoints = set(flatten(tangent_points(p, avoid_by, origin) for p in endpoints))
+
+	#Return tangent points where a half-line from the origin to that point does
+	# not intersect any segment in query, ignoring intersections with the origin
+	vis_points = set()
+	# for tp in tanpoints:
+	# 	hl = HalfLine(origin, tp)
+	# 	if(not any(hl.intersection(seg) not in [None, origin] for seg in query)
+	# 			and all(hl.line.distance(ep) >= avoid_by for ep in endpoints)):
+	# 		vis_points.add(tp)
+	# return vis_points
+
+	isec_segs = set()
+	for tp in tanpoints:
+		hl = HalfLine(origin, tp)
+		for seg in query:
+			if (hl.intersection(seg) not in [None, origin]   or
+					hl.line.distance(seg.start_point) < avoid_by or
+					hl.line.distance(seg.end_point  ) < avoid_by):
+				include = False
+				isec_segs.add(seg)
+		if include:
+			vis_points.add(tp)
+
+	return vis_points, isec_segs
+
+
+def visibility4(origin:Point, query:Collection[Segment], avoid_by=1):
+	endpoints = set(flatten(query)) - {origin}
+	tanpoints = set(flatten(
+			tangent_points(p, avoid_by, origin) for p in endpoints))
+	isecs = {}
+
+	for tp in tanpoints:
+		hl = HalfLine(origin, tp)
+		isecs[tp] = set()
+		for seg in query:
+			isec = False
+			if hl.intersecting(seg):
+				isec = True
+			if not isec:
+				if seg.start_point != origin:
+					d = hl.distance(seg.start_point)
+					if d is not None and d < avoid_by:
+						isec = True
+			if not isec:
+				d = hl.distance(seg.end_point)
+				if d is not None and d < avoid_by:
+					isec = True
+
+			if isec:
+				isecs[tp].add(seg)
+
+	return dict(sorted(isecs.items(), key=lambda x:len(x[1])))
+
+
+def visibility5(origin:Point, query:Collection[GSegment], avoid_by=.5):
+	"""Return
+		{point: set(segments), ...},
+	where a half-line drawn from `origin` to `point` intersects {segments}. The
+	returned dict is sorted by the number of intersected segments.
+	"""
+	endpoints = set(flatten(query)) - {origin}
+	tanpoints = set(flatten(
+			tangent_points(p, avoid_by, origin) for p in endpoints))
+	r = {}
+	for ep in tanpoints:
+		hls = GHalfLine(origin, ep).parallels2d(avoid_by, inc_self=True)
+		r[ep] = {seg for seg in query if seg.intersecting(hls)}
+	return dict(sorted(r.items(), key=lambda x:len(x[1])))
+
 
 
 def split_segs(segments, by:Segment):
@@ -121,30 +173,6 @@ def split_segs(segments, by:Segment):
 	return set(b[True]), set(b[False])
 
 
-
-
-#Source: https://math.stackexchange.com/questions/543496/
-def tangent_points(center:Point, radius, p:Point):
-	"""Given a circle at center with radius, return the points on the circle that
-	form tanget lines with point p."""
-	dx, dy = p.x-center.x, p.y-center.y
-	dxr, dyr = -dy, dx
-	d = (dx**2 + dy**2)**.5
-	if d < radius:
-		raise ValueError('Point p is inside the circle')
-
-	rho = radius/d
-	ad = rho**2
-	bd = rho*(1-rho**2)**.5
-	return (
-		GPoint(center.x + ad*dx + bd*dxr, center.y + ad*dy + bd*dyr, center.z),
-		GPoint(center.x + ad*dx - bd*dxr, center.y + ad*dy - bd*dyr, center.z))
-
-
-def angsort(points: List[Point], ref:Segment):
-	"""Return points sorted counter-clockwise with respect to the reference
-	segment."""
-	return sorted(points, key=partial(ccw_dist, a=ref.end_point, c=ref.start_point), reverse=True)
 
 
 #Combine subsequent segments on the same line
@@ -221,202 +249,6 @@ def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 				extra.append(line)
 
 	return preamble, segments, extra
-
-
-
-class HalfLine(Geometry3D.HalfLine):
-	def __init__(self, a, b):
-		self._a = a
-		self._b = b
-		super().__init__(a, b)
-
-
-	def as2d(self):
-		if not isinstance(self._b, Point):
-			raise ValueError(f"Can't convert {type(self._b)} to 2D")
-		return Geometry3D.HalfLine(
-				GPoint.as2d(self._a),
-				GPoint.as2d(self._b))
-
-
-	def __repr__(self):
-		return "H({}, {})".format(self.point, self.vector)
-
-
-class GPoint(Point):
-	def __init__(self, *args, **kwargs):
-		"""Pass Geometry3D.Point arguments or a gcline.GCLine and optionally a *z*
-		argument. If *z* is missing it will be set to 0."""
-		self.line = None
-		z = kwargs.get('z', 0) or 0
-
-		if len(args) == 1:
-			if isinstance(args[0], GCLine):
-				l = args[0]
-				if not (l.code in ('G0', 'G1') and 'X' in l.args and 'Y' in l.args):
-					raise ValueError(f"GCLine instance isn't an X or Y move:\n\t{args[0]}")
-				super().__init__(l.args['X'], l.args['Y'], z)
-				self.line = l
-
-			elif isinstance(args[0], (list,tuple)):
-				super().__init__(args[0])
-
-			elif isinstance(args[0], (GPoint, Point)):
-				super().__init__(
-					kwargs.get('x', args[0].x),
-					kwargs.get('y', args[0].y),
-					kwargs.get('z', args[0].z))
-
-			else:
-				raise ValueError(f'Invalid type for arg to GPoint: ({type(args[0])}) {args[0]}')
-
-		elif len(args) == 2:
-			super().__init__(*args)
-
-		elif len(args) == 3:
-			super().__init__(*args)
-
-		else:
-			raise ValueError(f"Can't init GPoint with args {args}")
-
-	def __repr__(self):
-		return "{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
-
-	def as2d(self):
-		"""Return a copy of this point with *z* set to 0. If z is already 0, return self."""
-		if self.z == 0: return self
-		return self.copy(z=0)
-
-
-	def inside(self, seglist):
-		"""Return True if this point is inside the polygon formed by the Segments
-		in seglist."""
-		#We make a segment from this point to 0,0,0 and test intersections; if
-		# there are an even number, the point is inside the polygon.
-		test_seg = GSegment(self.as2d(), (0,0,0))
-		return len([s for s in seglist if intersection(test_seg, s.as2d())]) % 2
-
-
-	def copy(self, z=None):
-		c = copy(self)
-		if z is not None: c.z = z
-		return c
-
-
-	def moved(self, vec):
-		"""Return a copy of this point moved by vector vec."""
-		return self.copy().move(vec)
-
-
-class GSegment(Geometry3D.Segment):
-	def __init__(self, a, b, z=None, gc_lines=None, is_extrude=False, **kwargs):
-		#Label whether this is an extrusion move or not
-		self.is_extrude = is_extrude
-
-		self.printed = False
-
-		#Save the movement lines of gcode
-		self.gc_line1 = None
-		self.gc_line2 = None
-
-		#Save *all* lines of gcode involved in this segment
-		self.gc_lines = GCLines(gc_lines) or GCLines()
-
-		#Argument |a| is a GSegment: instantiate a copy
-		if isinstance(a, GSegment):
-			if b is not None:
-				raise ValueError('Second argument must be None when first is a GSegment')
-			copyseg = a
-			#Make copies of the start/end points to ensure we avoid accidents
-			a = copy(kwargs.get('start_point', copyseg.start_point))
-			b = copy(kwargs.get('end_point',   copyseg.end_point))
-			z = a.z if z is None else z
-			gc_lines = copyseg.gc_lines if gc_lines is None else gc_lines
-			is_extrude = copyseg.is_extrude or is_extrude
-
-		#If instantiating a copy, |a| and |b| have been set from the passed GSegment
-		if isinstance(a, Point):
-			point1 = a if isinstance(a, GPoint) else GPoint(a)
-		elif isinstance(a, GCLine):
-			point1 = GPoint(a, z=z)
-			self.gc_line1 = a
-			self.gc_lines.append(a)
-		elif isinstance(a, (tuple,list)):
-			point1 = GPoint(*a)
-		else:
-			print(a, type(a), type(a) == GSegment)
-			raise ValueError("Attempt to instantiate a GSegment with argument |a| as "
-					f"type {type(a)}, but only <GSegment>, <Point>, <GCLine>, <tuple> and <list> are supported.\n"
-					" If this occurrs in a Jupyter notebook, it's because reloading messes things up. Try restarting the kernel.")
-
-		if isinstance(b, Point):
-			point2 = b if isinstance(b, GPoint) else GPoint(b)
-		elif isinstance(b, GCLine):
-			point2 = GPoint(b, z=z)
-			self.gc_line2 = b
-			self.gc_lines.append(b)
-		elif isinstance(b, (tuple,list)):
-			point2 = GPoint(*b)
-		else:
-			raise ValueError(f"Arg b is type {type(b)} = {b} but that's not supported!")
-
-		if z is not None:
-			point1.z = point2.z = z
-
-		if point1 == point2:
-			raise ValueError("Cannot initialize a Segment with two identical Points\n"
-					f"Init args: a={a}, b={b}, z={z}")
-
-		self.line = Geometry3D.Line(point1, point2)
-		self.start_point = point1
-		self.end_point   = point2
-
-		#Sort any gcode lines by line number
-		self.gc_lines.sort()
-
-
-	def __repr__(self):
-		if not(self.gc_line1 and self.gc_line2):
-			return "<{}←→{} ({:.2f} mm)>".format(self.start_point, self.end_point,
-					self.length())
-		return "<{}[{:>2}] {}:{}←→{}:{} ({:.2f} mm)>".format(
-				'S' if self.printed else 's',
-				len(self.gc_lines),
-				self.gc_line1.lineno, self.start_point,
-				self.gc_line2.lineno, self.end_point,
-				self.length())
-
-	def intersects(self, check:List[Segment]):
-		"""Return whether this GSegment intersects anything in check."""
-		return any(self.intersection(seg) for seg in check)
-
-
-	def intersection2d(self, other):
-		return intersection(self.as2d(), other.as2d())
-
-
-	def as2d(self):
-		if self.start_point.z == 0 and self.end_point.z == 0:
-			return self
-		return GSegment(self.start_point.as2d(), self.end_point.as2d())
-
-
-	def set_z(self, z):
-		"""Set both endpoints of this Segment to a new z."""
-		if self.start_point.z == z and self.end_point.z == z:
-			return self
-		self.start_point.z = z
-		self.end_point.z = z
-		self.line = Geometry3D.Line(self.start_point, self.end_point)
-		return self
-
-
-	def copy(self, start_point=None, end_point=None, z=None):
-		return GSegment(self, None,
-			start_point=start_point or self.start_point,
-			end_point=end_point     or self.end_point,
-			z=z)
-
 
 
 # ------- Monkey patching for improved Geometry3D objects ------
