@@ -30,6 +30,7 @@ class AccordionHandler(logging.Handler):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, level=kwargs.get('level', logging.NOTSET))
 		self._accordion = ipywidgets.Accordion()
+		self.default_title = kwargs.get('default_title', 'Messages')
 		self.output_handler_class = kwargs.get('handler_class', OutputWidgetHandler)
 		self.default_handler_args = kwargs.get('handler_args', {})
 		self.out_handler = None
@@ -51,7 +52,8 @@ class AccordionHandler(logging.Handler):
 	def unfold(self, index=None):
 		"""Unfold the fold at the given index, or the last fold if no index is
 		provided."""
-		self._accordion.selected_index = index if index is not None else len(self._accordion.children) - 1
+		if self._accordion.children:
+			self._accordion.selected_index = index if index is not None else len(self._accordion.children) - 1
 
 
 	def fold(self):
@@ -61,7 +63,7 @@ class AccordionHandler(logging.Handler):
 
 	def emit(self, record):
 		if self.out_handler is None:
-			self.add_fold('Messages')
+			self.add_fold(self.default_title)
 		self.out_handler.emit(record)
 
 
