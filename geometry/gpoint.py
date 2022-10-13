@@ -1,5 +1,5 @@
 from copy import copy
-from Geometry3D import Point, intersection
+from Geometry3D import Point
 from fastcore.basics import listify
 
 class GPoint(Point):
@@ -55,7 +55,7 @@ class GPoint(Point):
 		#We make a segment from this point to 0,0,0 and test intersections; if
 		# there are an even number, the point is inside the polygon.
 		test_seg = GSegment(self.as2d(), (0,0,0))
-		return len([s for s in seglist if intersection(test_seg, s.as2d())]) % 2
+		return len([s for s in seglist if test_seg.intersection(s.as2d())]) % 2
 
 
 	def copy(self, z=None):
