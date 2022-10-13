@@ -29,6 +29,8 @@ class RichOutputWidgetHandler(OutputWidgetHandler):
 		self.style.update(kwargs.get('html_style', {}))
 		self.html_format = _dict2format(self.style)
 
+		self.force_div = False
+
 
 	def _render_segments(self, segments, html_style=None):
 		def escape(text: str) -> str:
@@ -61,9 +63,21 @@ class RichOutputWidgetHandler(OutputWidgetHandler):
 		return html
 
 
+	def __enter__(self):
+		self.force_div = True
+		return self.output_widget
+
+
+	def __exit__(self, exc_type, value, traceback):
+		self.force_div = False
+		if exc_type is not None:
+			print(f'Exception on Step.__exit__: {exc_type}')
+			return False
+
+
 	def emit(self, record):
 		style = record.__dict__.get('style', {})
-		div   = record.__dict__.get('div', '')
+		div   = record.__dict__.get('div', '') or self.force_div
 
 		html  = self._render_segments(
 			self.console.render(self.format(record)),
