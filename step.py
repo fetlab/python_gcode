@@ -12,7 +12,7 @@ from plot_helpers import update_figure, plot_segments
 
 class Step:
 	#Default plotting style
-	style = {
+	style: dict[str, dict] = {
 		'gc_segs':    {'mode':'lines', 'line': dict(color='green',  width=2)},
 		'thread':     {'mode':'lines', 'line': dict(color='yellow', width=1, dash='dot')},
 		'old_segs':   {'line': dict(color= 'gray', width=1)},
