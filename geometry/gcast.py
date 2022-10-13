@@ -2,8 +2,6 @@ from .gpoint import GPoint
 from .gsegment import GSegment
 from .ghalfline import GHalfLine
 
-print('gcast imported:', [k for k in globals() if k[0] != '_'])
-
 def gcast(obj):
 	"""Cast a Geometry3D object to a G* object if one exists."""
 	try:
