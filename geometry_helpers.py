@@ -162,14 +162,14 @@ def visibility5(origin:GPoint, query:Collection[GSegment], avoid_by=.5):
 
 
 
-def split_segs(segments, by:Segment):
-	"""Split the given segments by a plane defined by using the segment 'by' as
-	the origin and direction vector for the plance. Return lists
-	(same_side, opp_side), where segments in same_side have at least one point in
-	the direction of 'by' and segments in opp_side are the rest."""
-	plane = Plane(by.start_point, by.line.dv)
-	b = bucket(segments, key=lambda s:plane.pointcmp(s[0]) >= 0 or plane.pointcmp(s[1]) >= 0)
-	return set(b[True]), set(b[False])
+# def split_segs(segments, by:GSegment):
+# 	"""Split the given segments by a plane defined by using the segment 'by' as
+# 	the origin and direction vector for the plance. Return lists
+# 	(same_side, opp_side), where segments in same_side have at least one point in
+# 	the direction of 'by' and segments in opp_side are the rest."""
+# 	plane = Plane(by.start_point, by.line.dv)
+# 	b = bucket(segments, key=lambda s:plane.pointcmp(s[0]) >= 0 or plane.pointcmp(s[1]) >= 0)
+# 	return set(b[True]), set(b[False])
 
 
 
