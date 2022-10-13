@@ -1,8 +1,9 @@
 from typing import List
 from enum import Enum
+from fastcore.basics import store_attr
 
 from geometry import GSegment, GPoint
-from util import store_attr, linf, Saver
+from util import linf, Saver
 from logger import rprint, rich_log
 import logging
 

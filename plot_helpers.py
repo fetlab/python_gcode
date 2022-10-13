@@ -3,7 +3,9 @@ from fastcore.basics import listify
 from fastcore.meta import use_kwargs
 from util import deep_update
 from functools import partial
-from geometry_helpers import min_max_xyz_segs, Segment, Point
+from geometry.utils import min_max_xyz_segs
+from geometry.gsegment import GSegment
+from geometry.gpoint import GPoint
 
 styles = {
 	#'bed':        {'line': dict(color='rgba(0,0,0,0)'), 'fillcolor': 'LightSkyBlue', 'opacity':.25},
@@ -123,9 +125,9 @@ def quickplot(plot3d=False, show=True, **kwargs):
 	for style in styles:
 		if style in kwargs:
 			if not (data := listify(kwargs[style])): continue
-			if isinstance(data[0], Segment):
+			if isinstance(data[0], GSegment):
 				plot_segments(fig, data, style=styles[style], plot3d=plot3d)
-			elif isinstance(data[0], Point):
+			elif isinstance(data[0], GPoint):
 				plot_points(fig, data, style=styles[style], plot3d=plot3d)
 	if show: show_dark(fig)
 	return fig

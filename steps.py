@@ -1,4 +1,5 @@
-from util import store_attr, find
+from fastcore.basics import store_attr
+from util import find
 from step import Step
 from logger import rprint
 from gcline import GCLine

@@ -1,6 +1,6 @@
 from copy import copy
 from typing import Collection, Set
-from Geometry3D import Vector, Segment, Point, Line, HalfLine
+from Geometry3D import Vector, Segment, Point, Line
 from fastcore.basics import listify
 from .gpoint import GPoint
 

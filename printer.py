@@ -12,7 +12,8 @@ from gcline import GCLine
 from ring import Ring
 from bed import Bed
 from logger import rprint
-from geometry_helpers import visibility4, angsort
+from geometry_helpers import visibility4
+from geometry.utils import angsort
 
 
 class Printer:
