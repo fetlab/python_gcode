@@ -1,6 +1,5 @@
 from typing import List
 from enum import Enum
-from fastcore.basics import store_attr
 
 from geometry import GSegment, GPoint
 from util import linf, Saver
@@ -22,15 +21,17 @@ class Step:
 		'all_thread': {'line': dict(color='cyan', dash='dot', width=.5)},
 	}
 
-	def __init__(self, steps_obj, name='', debug=True):
-		store_attr()
-		self.printer = steps_obj.printer
-		self.layer   = steps_obj.layer
-		self.gcsegs  = []
-		self.number  = -1
-		self.debug   = debug
-		self.caller  = linf(2)
-		self.valid   = True
+	def __init__(self, steps_obj, name='', debug=True, debug_plot=False):
+		self.name       = name
+		self.debug      = debug
+		self.debug_plot = debug_plot
+		self.steps_obj  = steps_obj
+		self.printer    = steps_obj.printer
+		self.layer      = steps_obj.layer
+		self.gcsegs     = []
+		self.number     = -1
+		self.caller     = linf(2)
+		self.valid      = True
 
 
 	def __repr__(self):
