@@ -250,50 +250,50 @@ def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 	return preamble, segments, extra
 
 
-# ------- Monkey patching for improved Geometry3D objects ------
+# # ------- Monkey patching for improved Geometry3D objects ------
 
-# --- Point
-@patch
-def __repr__(self:Point):
-	return "!{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
-@patch
-def as2d(self:Point):
-	return Point(self.x, self.y, 0)
-@patch
-def xyz(self:Point):
-	return self.x, self.y, self.z
-@patch
-def xy(self:Point):
-	return self.x, self.y
-Point.inside = GPoint.inside
-
-
-# --- Segment
-@patch
-def __repr__(self:Segment):
-	return "<{}←→{}>".format(self.start_point, self.end_point)
-@patch
-def as2d(self:Segment):
-	return GSegment(self.start_point.as2d(), self.end_point.as2d())
-@patch
-def xyz(self:Segment):
-	x, y, z = tuple(zip(self.start_point.xyz(), self.end_point.xyz()))
-	return dict(x=x, y=y, z=z)
-@patch
-def xy(self:Segment):
-	x, y = tuple(zip(self.start_point.xy(), self.end_point.xy()))
-	return dict(x=x, y=y)
+# # --- Point
+# @patch
+# def __repr__(self:GPoint):
+# 	return "!{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
+# @patch
+# def as2d(self:GPoint):
+# 	return Point(self.x, self.y, 0)
+# @patch
+# def xyz(self:GPoint):
+# 	return self.x, self.y, self.z
+# @patch
+# def xy(self:GPoint):
+# 	return self.x, self.y
+# Point.inside = GPoint.inside
 
 
-# --- Vector
-@patch
-def __repr__(self:Vector):
-	return "V({:.2f}, {:.2f}, {:.2f})".format(*self._v)
+# # --- Segment
+# @patch
+# def __repr__(self:GSegment):
+# 	return "<{}←→{}>".format(self.start_point, self.end_point)
+# @patch
+# def as2d(self:GSegment):
+# 	return GSegment(self.start_point.as2d(), self.end_point.as2d())
+# @patch
+# def xyz(self:GSegment):
+# 	x, y, z = tuple(zip(self.start_point.xyz(), self.end_point.xyz()))
+# 	return dict(x=x, y=y, z=z)
+# @patch
+# def xy(self:GSegment):
+# 	x, y = tuple(zip(self.start_point.xy(), self.end_point.xy()))
+# 	return dict(x=x, y=y)
 
 
-# --- Plane
-@patch
-def pointcmp(self:Plane, point:Point):
-	"""Return whether point is below (-1), on (0), or above (1) plane."""
-	isec = Line(point, self.n).intersection(self)
-	return sign(Vector(isec, point) * self.n)
+# # --- Vector
+# @patch
+# def __repr__(self:Vector):
+# 	return "V({:.2f}, {:.2f}, {:.2f})".format(*self._v)
+
+
+# # --- Plane
+# @patch
+# def pointcmp(self:Plane, point:GPoint):
+# 	"""Return whether point is below (-1), on (0), or above (1) plane."""
+# 	isec = Line(point, self.n).intersection(self)
+# 	return sign(Vector(isec, point) * self.n)
