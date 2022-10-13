@@ -1,8 +1,9 @@
+from typing import Collection, Dict, Any
+from functools import partial
 import plotly.graph_objects as go
 from fastcore.basics import listify
 from fastcore.meta import use_kwargs
 from util import deep_update
-from functools import partial
 from geometry.utils import min_max_xyz_segs
 from geometry.gsegment import GSegment
 from geometry.gpoint import GPoint
@@ -29,7 +30,7 @@ def get_style(spec, linewidth=1, markersize=4):
 
 		markersize applies unless a size is specified in the code below.
 	"""
-	markers = {
+	markers: dict[str, str|dict] = {
 			'.': {'symbol': 'circle', 'size': 1},
 			'o': 'circle',
 			'v': 'triangle-down',
@@ -74,7 +75,8 @@ def get_style(spec, linewidth=1, markersize=4):
 
 	#Adapted from matplotlib's code
 	# https://github.com/matplotlib/matplotlib/blob/a302267d7f0ec4ab05973b984f7b56db21bf524c/lib/matplotlib/axes/_base.py#L169
-	markerstyle, markercolor, linestyle, linecolor, color = None, None, None, None, None
+	markerstyle: str|dict|None = None
+	markercolor, linestyle, linecolor, color = None, None, None, None
 
 	i = 0
 	while i < len(spec):
@@ -94,7 +96,7 @@ def get_style(spec, linewidth=1, markersize=4):
 			linestyle = lines[c]
 			i += 1
 
-	style = {}
+	style: dict[str, dict|Any] = {}
 
 	if markercolor or markerstyle:
 		style['marker'] = {'size':  markersize}
@@ -158,7 +160,7 @@ def update_figure(fig, name, style, what='traces'):
 		getattr(fig, f'update_{what}')(selector={'name':name}, **style[name])
 
 
-def plot_points(fig, points, name='points', style=None, plot3d=False):
+def plot_points(fig, points: Collection[GPoint], name='points', style:Dict=None, plot3d=False):
 	if isinstance(style, str): style = get_style(style)
 	style = deep_update(styles['anchor'], style or {})
 	x,y,z = xyz = zip(*[p[:] for p in points])
@@ -176,7 +178,8 @@ def plot_points(fig, points, name='points', style=None, plot3d=False):
 
 
 
-def plot_segments(fig, segs_to_plot, name='gc_segs', style=None, plot3d=False):
+def plot_segments(fig, segs_to_plot: Collection[GSegment], name='gc_segs',
+									style:Dict|None=None, plot3d=False):
 	if isinstance(style, str): style = get_style(style)
 	style = deep_update(styles['gc_segs'], style or {})
 	if plot3d:
