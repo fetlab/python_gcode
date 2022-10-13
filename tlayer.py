@@ -3,13 +3,18 @@ import plotly, plotly.graph_objects as go
 from Geometry3D import Point, Segment, Plane, distance
 from geometry_helpers import GPoint, GSegment, Geometry, Planes, seg_combine, gcode2segments
 from typing import List, Set
-from itertools import cycle
 from cura4layer import Cura4Layer
 from fastcore.basics import listify
+from util import deep_update
 
 log = logging.getLogger('threader')
 
 class TLayer(Cura4Layer):
+	style: dict[str, dict] = {
+		'move':    {'line': {'color':'yellow', 'width':1}, 'opacity':.5},
+		'extrude': {'line': {'color':'green',  'width':1}, 'opacity':.5},
+		'3d':      {'line': {'width':2}, 'opacity':1},
+	}
 	"""A gcode layer that has thread in it."""
 	def __init__(self, *args, layer_height=0.4, **kwargs):
 		super().__init__(*args, **kwargs)
@@ -21,15 +26,18 @@ class TLayer(Cura4Layer):
 		self.postamble    = []
 
 
-	def plot(self, fig=None,
-			move_colors:List=plotly.colors.qualitative.Set2,
-			extrude_colors:List=plotly.colors.qualitative.Dark2,
-			plot3d=False, only_outline=True, show=False):
+	def plot(self, fig=None, plot3d=False, only_outline=True, show=False,
+					style:dict={}):
 		"""Plot the geometry making up this layer. Set only_outline to True to
 		print only the outline of the gcode in the layer .
 		"""
 		self.add_geometry()
-		colors = cycle(zip(extrude_colors, move_colors))
+		if style and 'line' in style or 'marker' in style:
+			_style = self.style.copy()
+			_style['move'] = style
+			_style['extrude'] = style
+			style = _style
+		style = deep_update(self.style, style or {})
 
 		if fig is None:
 			fig = go.Figure()
@@ -37,7 +45,6 @@ class TLayer(Cura4Layer):
 		for gcline, part in self.parts.items():
 			if only_outline and 'wall-outer' not in gcline.line.lower():
 				continue
-			colorD, colorL = next(colors)
 
 			Esegs = {'x': [], 'y': [], 'z': []}
 			Msegs = {'x': [], 'y': [], 'z': []}
@@ -55,24 +62,24 @@ class TLayer(Cura4Layer):
 
 			if plot3d:
 				scatter = go.Scatter3d
-				lineprops = {'width': 2}
-				plotprops = {'opacity': 1}
+				lineprops = style['3d']
 			else:
 				scatter = go.Scatter
 				lineprops = {}
-				plotprops = {'opacity': .5}
 				if 'z' in Esegs: Esegs.pop('z')
 				if 'z' in Msegs: Msegs.pop('z')
 
+			mv_style = deep_update(style['move'],    lineprops)
+			ex_style = deep_update(style['extrude'], lineprops)
 
 			if Esegs['x']:
 				fig.add_trace(scatter(**Esegs, mode='lines',
-					name='Ex'+(repr(gcline).lower()),
-					line=dict(color=colorD, **lineprops), **plotprops))
+					name='Ex'+(repr(gcline).lower()), **ex_style))
+
 			if Msegs['x']:
 				fig.add_trace(scatter(**Msegs, mode='lines',
 					name='Mx'+(repr(gcline).lower()),
-					line=dict(color=colorL, dash='dot', **lineprops), **plotprops))
+					line=lineprops, **mv_style))
 
 		if show:
 			fig.update_layout(template='plotly_dark',# autosize=False,
