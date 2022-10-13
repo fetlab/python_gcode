@@ -7,7 +7,7 @@ from logger import rprint, rich_log
 import logging
 
 import plotly.graph_objects as go
-from plot_helpers import update_figure
+from plot_helpers import update_figure, plot_segments
 
 
 class Step:
@@ -238,6 +238,13 @@ class Step:
 
 
 	def plot_gcsegments(self, fig, gcsegs=None, style=None):
+		plot_segments(fig,
+									gcsegs if gcsegs is not None else self.gcsegs,
+									style=self.style['gc_segs'])
+		update_figure(fig, 'gc_segs', style)
+		return
+
+
 		#Plot gcode segments. The 'None' makes a break in a line so we can use
 		# just one add_trace() call.
 		segs = {'x': [], 'y': []}
