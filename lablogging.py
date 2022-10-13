@@ -1,13 +1,14 @@
 import logging, ipywidgets
 from IPython.display import display
 
+_default_layout = {
+	'width': '100%',
+}
+
 class OutputWidgetHandler(logging.Handler):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, level=kwargs.get('level', logging.NOTSET))
-		layout = kwargs.get('layout',
-			{
-				'width': '100%',
-			})
+		layout = kwargs.get('layout', _default_layout)
 		self.output_widget = ipywidgets.Output(layout=layout)
 
 
