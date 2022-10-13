@@ -28,8 +28,8 @@ ring_center = 36, 28
 ring_radius = 92.5
 
 #Epsilon for various things
-epsilon = 0.25
-avoid_epsilon = 1  #how much room to leave around segments
+thread_epsilon = 1   #Thread segments under this length (mm) get ingored/merged
+avoid_epsilon  = 1   #how much room (mm) to leave around segments
 
 """
 Usage notes:
@@ -58,19 +58,23 @@ class Threader:
 		return r
 
 
-	def route_model(self, thread_list: List[GSegment], start_layer=None, end_layer=None):
+	def route_model(self, thread_list: List[GSegment], start_layer=None, end_layer=None, debug_plot=False):
 		if self.layer_steps: raise ValueError("This Threader has been used already")
 		self.acclog = reinit_logging(self.acclog)
 		self.acclog.show()
 		for layer in self.gcode_file.layers[start_layer:end_layer]:
 			try:
-				self._route_layer(thread_list, layer, self.printer.anchor.copy(z=layer.z))
+				self._route_layer(
+											thread_list,
+											layer,
+											self.printer.anchor.copy(z=layer.z),
+											debug_plot=debug_plot)
 			except:
 				self.acclog.unfold()
 				raise
 
 
-	def route_layer(self, thread_list: List[GSegment], layer, start_anchor=None):
+	def route_layer(self, thread_list: List[GSegment], layer, start_anchor=None, debug_plot=False):
 		"""Goal: produce a sequence of "steps" that route the thread through one
 		layer. A "step" is a set of operations that diverge from the original
 		gcode; for example, printing all of the non-thread-intersecting segments
@@ -79,17 +83,17 @@ class Threader:
 		self.acclog = reinit_logging(self.acclog)
 		self.acclog.show()
 		try:
-			self._route_layer(thread_list, layer, start_anchor)
+			self._route_layer(thread_list, layer, start_anchor, debug_plot=debug_plot)
 		except:
 			self.acclog.unfold()
 			raise
 
 
-	def _route_layer(self, thread_list: List[GSegment], layer, start_anchor=None):
+	def _route_layer(self, thread_list: List[GSegment], layer, start_anchor=None, debug_plot=False):
 		self.printer.layer = layer
 		self.printer.z     = layer.z
 
-		self.layer_steps.append(Steps(layer=layer, printer=self.printer))
+		self.layer_steps.append(Steps(layer=layer, printer=self.printer, debug_plot=debug_plot))
 		steps = self.layer_steps[-1]
 
 		thread = deepcopy(thread_list)
@@ -113,7 +117,8 @@ class Threader:
 				((min_x, max_y, layer.z), (max_x, max_y, layer.z)),
 				((max_x, max_y, layer.z), (max_x, min_y, layer.z)),
 				((max_x, min_y, layer.z), (min_x, min_y, layer.z)))]
-			with steps.new_step('Move thread to avoid layer extents', debug=False):
+			with steps.new_step('Move thread to avoid layer extents', debug=False,
+											 debug_plot=False):
 				self.printer.thread_avoid(ext_rect)
 			#Set the Layer's postamble to the entire set of gcode lines so that we
 			# correctly generate the output gcode with Steps.gcode()
@@ -156,7 +161,7 @@ class Threader:
 			rprint('+++++ START ANCHOR:', start_anchor)
 			start_anchor = start_anchor.copy(z=layer.z)
 			layer.start_anchor = start_anchor
-			if (sdist := start_anchor.distance(thread[0].start_point.copy(z=layer.z))) > epsilon:
+			if (sdist := start_anchor.distance(thread[0].start_point.copy(z=layer.z))) > thread_epsilon:
 				thread.insert(0, GSegment(start_anchor, thread[0].start_point, z=layer.z))
 				rprint(f'Added start anchor seg: {thread[0]}')
 			else:
@@ -166,27 +171,28 @@ class Threader:
 		#Snap thread to printed geometry
 		snapped_thread = layer.geometry_snap(thread)
 		if snapped_thread:
+			layer.snapped_thread = snapped_thread
+			thread = list(filter(None, snapped_thread.values()))
 			rprint('Snapped thread:',
 					[(f'  {i}. Old: {o}\n     New: {n}' +
 						('' if n is None else f' →({o.end_point.distance(n.end_point):.4f} mm)'))
 					for i,(o,n) in enumerate(snapped_thread.items())])
-			thread = list(filter(None, snapped_thread.values()))
-			layer.snapped_thread = snapped_thread
 
 		layer.thread = thread
 
 		rprint(f'{len(thread)} thread segments in this layer:',
 			[f'  {i}. {tseg} ({tseg.length():>5.2f} mm)' for i, tseg in enumerate(thread)])
 
-		anchor_points = [tseg.end_point for tseg in thread]
+		#Check for printed segments that have more than one thread anchor in them
+		anchor_points = ([start_anchor] if start_anchor else []) + [tseg.end_point for tseg in thread]
 		anchor_segs = {a: a.intersecting(layer.geometry.segments) for a in anchor_points}
 		multi_anchor = filter_values(
 			{seg: seg.intersecting(anchor_points) for seg in layer.geometry.segments},
 			lambda anchors: len(anchors) > 1)
 		if multi_anchor:
-			rprint('[red]WARNING:[/] some segments contain more than one anchor:', multi_anchor)
+			rprint('[red]WARNING:[/] some segments contain more than one anchor:', pretty_repr(multi_anchor))
 		else:
-			rprint('Anchors fixed by segments:', rprint(pretty_repr(anchor_segs)))
+			rprint('Anchors fixed by segments:', pretty_repr(anchor_segs))
 
 		#Done preprocessing thread; now we can start figuring out what to print and how
 		rprint('[yellow]————[/] Start [yellow]————[/]', div=True)
@@ -210,9 +216,9 @@ class Threader:
 				rprint(f"[yellow]No segments contain the start anchor[/] {a}")
 
 		#Drop thread segments that are too short to worry about
-		thread = [tseg for tseg in thread if tseg.length() > epsilon]
+		thread = [tseg for tseg in thread if tseg.length() > thread_epsilon]
 		if (t1:=len(thread)) != (t2:=len(layer.thread)):
-			rprint(f'Dropped {t2-t1} thread segs due to being shorter than {epsilon}',
+			rprint(f'Dropped {t2-t1} thread segs due to being shorter than {thread_epsilon}',
 					f'now {t1} left')
 			if t1 > 0: rprint('\n'.join([f'  {tseg}' for tseg in thread]))
 
