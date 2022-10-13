@@ -55,11 +55,10 @@ class Printer:
 
 
 	def attr_changed(self, attr, old_value, new_value):
-		if attr[1] in 'xyz':
+		if attr[1] in 'xy':
 			setattr(self.ring, attr[1], new_value)
-			if attr[1] in 'xy':
-				#Move the ring to keep the thread intersecting the anchor
-				self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
+			#Move the ring to keep the thread intersecting the anchor
+			self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
 
 
 	def freeze_state(self):
