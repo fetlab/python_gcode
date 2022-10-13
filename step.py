@@ -235,6 +235,8 @@ class Step:
 		if exc_type is not None:
 			print(f'Exception on Step.__exit__: {exc_type}')
 			return False
+		#Tell parent Steps object we exited
+		self.steps_obj.step_exited(self)
 
 
 	def plot_gcsegments(self, fig, gcsegs=None, style=None):

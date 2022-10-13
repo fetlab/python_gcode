@@ -1,4 +1,3 @@
-from fastcore.basics import store_attr
 from util import find
 from step import Step
 from logger import rprint
@@ -6,9 +5,11 @@ from gcline import GCLine
 
 
 class Steps:
-	def __init__(self, layer, printer):
-		store_attr()
-		self.steps = []
+	def __init__(self, layer, printer, debug_plot=False):
+		self.layer         = layer
+		self.printer       = printer
+		self.debug_plot    = debug_plot
+		self.steps         = []
 		self._current_step = None
 
 
@@ -21,11 +22,19 @@ class Steps:
 		return self.steps[-1] if self.steps else None
 
 
-	def new_step(self, *messages, debug=True):
-		self.steps.append(Step(self, ' '.join(map(str,messages)), debug=debug))
+	def new_step(self, *messages, debug=True, debug_plot=None):
+		self.steps.append(Step(self, ' '.join(map(str,messages)), debug=debug,
+												 debug_plot=self.debug_plot if debug_plot is None else debug_plot))
 		self.current.number = len(self.steps) - 1
 		if debug: rprint(f'\n{self.current}')
 		return self.current
+
+
+	def step_exited(self, step):
+		"""When a Step exits it will call this. Janky!"""
+		# if step.debug_plot:
+		# 	with get_output():
+		# 		self.plot(stepnum=step.number)
 
 
 	def gcode(self):

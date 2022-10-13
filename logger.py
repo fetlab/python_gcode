@@ -23,14 +23,21 @@ def rprint(*args, indent_char=' ', indent=0, **kwargs):
 			msg += str(arg)
 
 	style = kwargs.get('style', {})
+	div   = kwargs.get('div', False)
 	if '\n' in msg:
 		style.setdefault('line-height', 'normal')
 
-	rich_log.debug(msg, extra={'style':style})
+	rich_log.debug(msg, extra={'style':style, 'div':div})
 
 
 def reinit_logging(acclog=None):
-	rich_log.removeHandler(acclog)
+	if acclog is None and rich_log.hasHandlers():
+		for handler in rich_log.handlers:
+			if isinstance(handler, AccordionHandler):
+				rich_log.removeHandler(handler)
+	else:
+		rich_log.removeHandler(acclog)
+
 	acclog = AccordionHandler(
 			default_title = 'Non-thread layers',
 			handler_class = RichOutputWidgetHandler,
@@ -40,3 +47,18 @@ def reinit_logging(acclog=None):
 			})
 	rich_log.addHandler(acclog)
 	return acclog
+
+
+def get_accordion():
+	acc = next(filter(lambda h: isinstance(h, AccordionHandler), rich_log.handlers), None)
+	if acc is None:
+		reinit_logging()
+		return get_accordion()
+	return acc
+
+
+def get_output():
+	acc = get_accordion()
+	if acc.out_handler is None:
+		acc.add_fold()
+	return acc.out_handler

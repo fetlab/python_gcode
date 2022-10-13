@@ -26,6 +26,17 @@ class OutputWidgetHandler(logging.Handler):
 		display(self.output_widget)
 
 
+	def __enter__(self):
+		return self.output_widget
+
+
+	def __exit__(self, exc_type, value, traceback):
+		if exc_type is not None:
+			print(f'Exception on Step.__exit__: {exc_type}')
+			return False
+
+
+
 
 class AccordionHandler(logging.Handler):
 	def __init__(self, *args, **kwargs):
@@ -38,9 +49,10 @@ class AccordionHandler(logging.Handler):
 		self.shown = False
 
 
-	def add_fold(self, title, keep_closed=False, **handler_args):
+	def add_fold(self, title='', keep_closed=False, **handler_args):
 		"""Add a new accordion fold with the given title. If keep_closed is True,
 		don't open this fold."""
+		if not title: title = self.default_title
 		new_handler_args = self.default_handler_args.copy()
 		new_handler_args.update(handler_args)
 		self.out_handler = self.output_handler_class(**new_handler_args)
@@ -64,7 +76,7 @@ class AccordionHandler(logging.Handler):
 
 	def emit(self, record):
 		if self.out_handler is None:
-			self.add_fold(self.default_title)
+			self.add_fold()
 		self.out_handler.emit(record)
 
 
