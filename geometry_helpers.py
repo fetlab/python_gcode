@@ -1,15 +1,14 @@
-from Geometry3D import Vector, Point, Segment, Line, Plane
+#from Geometry3D import Vector, Point, Segment, Line, Plane
 from gcline import GCLines
 from dataclasses import make_dataclass
-from fastcore.basics import patch
 from typing import List, Dict, Collection
 from collections import defaultdict
-from more_itertools import flatten, bucket
+from more_itertools import flatten
 
 from geometry.gpoint import GPoint
 from geometry.gsegment import GSegment
 from geometry.ghalfline import GHalfLine, GHalfLine as HalfLine
-from geometry.utils import tangent_points, sign, min_max_xyz_segs, angsort
+from geometry.utils import tangent_points
 
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
@@ -30,7 +29,7 @@ def visibility(thread, avoid):
 	return non_isecs
 
 
-def visibility2(origin:Point, query:List[Segment]):
+def visibility2(origin:GPoint, query:List[GSegment]):
 	"""Given a point origin and a query list of segments, find endpoints of the
 	segments that are visible from origin (no intersections between origin and
 	the endpoints). Return a dict of those endpoints and the segments associated
@@ -53,7 +52,7 @@ def visibility2(origin:Point, query:List[Segment]):
 	return non_isecs
 
 
-def avoid_visible(origin:Point, visible:Dict, query:Collection[Segment], avoid_by=1):
+def avoid_visible(origin:GPoint, visible:Dict, query:Collection[GSegment], avoid_by=1):
 	"""Given a point origin and a visibilty dict as returned by visibility2,
 	return points where for each point:
 		* the point is avoid_by away from the endpoints of visible segments
@@ -76,7 +75,7 @@ def avoid_visible(origin:Point, visible:Dict, query:Collection[Segment], avoid_b
 
 
 
-def visibility3(origin:Point, query:Collection[Segment], avoid_by=1):
+def visibility3(origin:GPoint, query:Collection[GSegment], avoid_by=1):
 	"""Return a tuple:
 		(the set of endpoints of Segments in query that are visible from origin,
 			segments in query that are "in the way" of other endpoints)
@@ -117,7 +116,7 @@ def visibility3(origin:Point, query:Collection[Segment], avoid_by=1):
 	return vis_points, isec_segs
 
 
-def visibility4(origin:Point, query:Collection[Segment], avoid_by=1):
+def visibility4(origin:GPoint, query:Collection[GSegment], avoid_by=1):
 	endpoints = set(flatten(query)) - {origin}
 	tanpoints = set(flatten(
 			tangent_points(p, avoid_by, origin) for p in endpoints))
@@ -146,7 +145,7 @@ def visibility4(origin:Point, query:Collection[Segment], avoid_by=1):
 	return dict(sorted(isecs.items(), key=lambda x:len(x[1])))
 
 
-def visibility5(origin:Point, query:Collection[GSegment], avoid_by=.5):
+def visibility5(origin:GPoint, query:Collection[GSegment], avoid_by=.5):
 	"""Return
 		{point: set(segments), ...},
 	where a half-line drawn from `origin` to `point` intersects {segments}. The
