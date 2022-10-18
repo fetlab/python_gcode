@@ -2,7 +2,7 @@ import logging
 import plotly, plotly.graph_objects as go
 from Geometry3D import Point, Segment, Plane, distance
 from geometry_helpers import GPoint, GSegment, Geometry, Planes, seg_combine, gcode2segments
-from typing import List, Set
+from typing import List, Set, Dict
 from cura4layer import Cura4Layer
 from fastcore.basics import listify
 from util import deep_update
@@ -176,7 +176,7 @@ class TLayer(Cura4Layer):
 		return segs
 
 
-	def geometry_snap(self, thread: List[GSegment]) -> List[GSegment]:
+	def geometry_snap(self, thread: List[GSegment]) -> Dict[GSegment, None|GSegment]:
 		"""Return new thread segments, modified as follows:
 			* Each segment end point is moved to its closest intersection with
 				printed layer geometry.
