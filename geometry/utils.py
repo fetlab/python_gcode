@@ -1,5 +1,5 @@
 from math import atan2, pi
-from typing import Collection
+from typing import Collection, List
 from more_itertools import first
 from Geometry3D import Point, Segment, Line, Vector, Plane
 
@@ -56,7 +56,7 @@ def ang_dist(p,c,a):
 	return atan2(p.y-c.y, p.x-c.x) - atan2(a.y-c.y, a.x-c.x)
 
 
-def angsort(points: Collection[Point], ref:Segment):
+def angsort(points: Collection[Point], ref:Segment) -> List[Point]:
 	"""Return points sorted with respect to their (absolute) angle to the
 	reference segment."""
 	return sorted(points, key=lambda p: abs(ang_dist(p, ref.start_point, ref.end_point)))
