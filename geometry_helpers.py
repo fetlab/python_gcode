@@ -1,7 +1,7 @@
 #from Geometry3D import Vector, Point, Segment, Line, Plane
 from gcline import GCLines
 from dataclasses import make_dataclass
-from typing import List, Dict, Collection
+from typing import List, Dict, Collection, Set
 from collections import defaultdict
 from more_itertools import flatten
 
@@ -116,7 +116,7 @@ def visibility3(origin:GPoint, query:Collection[GSegment], avoid_by=1):
 	return vis_points, isec_segs
 
 
-def visibility4(origin:GPoint, query:Collection[GSegment], avoid_by=1):
+def visibility4(origin:GPoint, query:Collection[GSegment], avoid_by=1) -> Dict[GPoint, Set]:
 	endpoints = set(flatten(query)) - {origin}
 	tanpoints = set(flatten(
 			tangent_points(p, avoid_by, origin) for p in endpoints))
