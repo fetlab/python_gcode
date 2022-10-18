@@ -45,8 +45,8 @@ class Threader:
 	def __init__(self, gcode_file:GcodeFile):
 		self.gcode_file  = gcode_file
 		self.printer     = Printer(effective_bed_size, ring_center, ring_radius)
-		self.layer_steps = []
-		self.acclog      = None
+		self.layer_steps: List[Steps] = []
+		self.acclog      = reinit_logging()
 
 
 	def gcode(self):
