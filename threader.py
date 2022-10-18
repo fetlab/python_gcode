@@ -90,7 +90,7 @@ class Threader:
 
 
 	def _route_layer(self, thread_list: List[GSegment], layer, start_anchor=None, debug_plot=False):
-		self.printer.layer = layer
+
 		self.printer.z     = layer.z
 
 		self.layer_steps.append(Steps(layer=layer, printer=self.printer, debug_plot=debug_plot))
