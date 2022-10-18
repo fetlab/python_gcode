@@ -210,17 +210,3 @@ class Printer:
 			self.anchor = target
 
 		return ring_angle
-
-
-	def plot_thread_to_ring(self, fig, style=None):
-		#Plot a thread from the current anchor to the carrier
-		fig.add_trace(go.Scatter(**segs_xy(self.anchor_to_ring(),
-			name='thread', **self.style['thread'])))
-		update_figure(fig, 'thread', style)
-
-
-	def plot_anchor(self, fig, style=None):
-		fig.add_trace(go.Scatter(x=[self.anchor.x], y=[self.anchor.y],
-			name='anchor', **self.style['anchor']))
-		update_figure(fig, 'anchor', style)
-
