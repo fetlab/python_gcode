@@ -3,6 +3,7 @@ from typing import Collection, Set
 from Geometry3D import Vector, Segment, Point, Line
 from fastcore.basics import listify
 from .gpoint import GPoint
+from .utils import distance_linelike_point
 
 class GSegment(Segment):
 	def __init__(self, a, b=None, z=None, gc_lines=None, is_extrude=False, **kwargs):
