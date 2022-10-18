@@ -28,7 +28,7 @@ class Step:
 		self.steps_obj  = steps_obj
 		self.printer    = steps_obj.printer
 		self.layer      = steps_obj.layer
-		self.gcsegs     = []
+		self.gcsegs:List[GSegment] = []
 		self.number     = -1
 		self.caller     = linf(2)
 		self.valid      = True
@@ -76,6 +76,7 @@ class Step:
 
 				gcode.extend(newlines)
 			return gcode
+		return []
 
 		#Sort gcsegs by the first gcode line number in each
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
