@@ -1,5 +1,5 @@
 from copy import copy
-from typing import Collection, Set
+from typing import Collection, Set, List
 from Geometry3D import Vector, Segment, Point, Line
 from fastcore.basics import listify
 from .gpoint import GPoint
@@ -128,11 +128,11 @@ class GSegment(Segment):
 		return self
 
 
-	def copy(self, start_point=None, end_point=None, z=None):
+	def copy(self, start_point=None, end_point=None, z=None, **kwargs):
 		return GSegment(self, None,
 			start_point=start_point or self.start_point,
 			end_point=end_point     or self.end_point,
-			z=z)
+			z=z, gc_lines=self.gc_lines, is_extrude=self.is_extrude, **kwargs)
 
 
 	def moved(self, vec):
@@ -154,8 +154,64 @@ class GSegment(Segment):
 	def __mul__(self, other):
 		if not isinstance(other, (int, float)):
 			return self * other
-		return self.copy(end_point=self.end_point.moved(self.line.dv.normalized() * other))
+		return self.copy(end_point=self.end_point.moved(
+			self.line.dv.normalized() * self.length() * (other-1)))
 
+
+	def _split(self, location:GPoint) -> List:
+		"""Return a set of two GSegments resulting from splitting this one into two
+		pieces at `location`."""
+		if location not in self:
+			raise ValueError(f"Requested split location {location} isn't on {self}")
+
+		seg1 = self.copy(end_point=location)
+		seg2 = self.copy(start_point=location)
+		if self.gc_line1 and self.gc_line2:
+			proportion = seg1.length() / self.length()
+			args = {
+					'X': location.x,
+					'Y': location.y,
+					'E': self.gc_line2.args['E'] * proportion,
+			}
+			if 'F' in self.gc_line2.args:
+				args['F'] = self.gc_line2.args['F']
+
+			seg1.gc_line1 = copy(self.gc_line1)
+			seg1.gc_line2 = self.gc_line2.__class__(args=args,
+																					 lineno=self.gc_line1.lineno+proportion)
+
+			seg2.gc_line1 = copy(seg1.gc_line2)
+			seg2.gc_line2 = copy(self.gc_line2)
+			seg2.gc_line2.args['E'] *= proportion
+
+			seg1.gc_line1.fake = True
+			seg1.gc_line2.fake = True
+			seg2.gc_line1.fake = True
+			seg2.gc_line2.fake = True
+
+			seg1.gc_lines = copy(self.gc_lines)
+			seg1.gc_lines[self.gc_line1.lineno] = seg1.gc_line1
+			seg1.gc_lines[self.gc_line2.lineno] = seg1.gc_line2
+
+			seg2.gc_lines = copy(self.gc_lines)
+			seg2.gc_lines[self.gc_line1.lineno] = seg2.gc_line1
+			seg2.gc_lines[self.gc_line2.lineno] = seg2.gc_line2
+
+		return [seg1, seg2]
+
+
+	def split(self, locations:GPoint|Collection[GPoint]) -> List:
+		locations = listify(locations)
+		splits    = []
+		to_split  = self
+
+		for loc in sorted(locations, key=self.start_point.distance):
+			seg1, seg2 = to_split._split(loc)
+			splits.append(seg1)
+			to_split = seg2
+		splits.append(seg2)
+
+		return splits
 
 
 	def distance(self, other):
