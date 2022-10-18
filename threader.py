@@ -6,6 +6,7 @@ from gcline import GCLine
 from gcode import GcodeFile
 from rich import print
 from rich.pretty import pretty_repr
+from itertools import pairwise
 
 from logger import rprint, reinit_logging
 
@@ -96,6 +97,7 @@ class Threader:
 		self.layer_steps.append(Steps(layer=layer, printer=self.printer, debug_plot=debug_plot))
 		steps = self.layer_steps[-1]
 
+		self.input_thread = thread_list
 		thread = deepcopy(thread_list)
 
 		if thread[0].start_point == self.printer.bed.anchor:
@@ -189,15 +191,21 @@ class Threader:
 			[f'  {i}. {tseg} ({tseg.length():>5.2f} mm)' for i, tseg in enumerate(thread)])
 
 		#Check for printed segments that have more than one thread anchor in them
-		anchor_points = ([start_anchor] if start_anchor else []) + [tseg.end_point for tseg in thread]
-		anchor_segs = {a: a.intersecting(layer.geometry.segments) for a in anchor_points}
-		multi_anchor = filter_values(
-			{seg: seg.intersecting(anchor_points) for seg in layer.geometry.segments},
-			lambda anchors: len(anchors) > 1)
-		if multi_anchor:
-			rprint('[red]WARNING:[/] some segments contain more than one anchor:', pretty_repr(multi_anchor))
-		else:
-			rprint('Anchors fixed by segments:', pretty_repr(anchor_segs))
+		if thread:
+			anchor_points = ([start_anchor] if start_anchor else []) + [tseg.end_point for tseg in thread]
+			anchor_segs = {a: a.intersecting(layer.geometry.segments) for a in anchor_points}
+			multi_anchor = filter_values(
+				{seg: seg.intersecting(anchor_points) for seg in layer.geometry.segments},
+				lambda anchors: len(anchors) > 1)
+			if multi_anchor:
+				rprint('[red]WARNING:[/] some segments contain more than one anchor:', pretty_repr(multi_anchor))
+				for seg, anchors in multi_anchor.items():
+					splits = seg.split([(GSegment(a1,a2)*.5).end_point for a1,a2 in pairwise(anchors)])
+					seg_idx = layer.geometry.segments.index(seg)
+					layer.geometry.segments[seg_idx:seg_idx+1] = splits
+					rprint(f'Split {seg} into', splits, indent=2)
+			else:
+				rprint('Anchors fixed by segments:', pretty_repr(anchor_segs))
 
 		#Done preprocessing thread; now we can start figuring out what to print and how
 		rprint('[yellow]————[/] Start [yellow]————[/]', div=True)
