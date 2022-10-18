@@ -1,3 +1,4 @@
+from typing import List
 from util import find
 from step import Step
 from logger import rprint
@@ -40,7 +41,7 @@ class Steps:
 
 	def gcode(self):
 		"""Return the gcode for all steps."""
-		r = []
+		r: List[GCLine] = []
 		for i,step in enumerate(self.steps):
 			g = step.gcode(include_start=not any([isinstance(l.lineno, int) for l in r]))
 
