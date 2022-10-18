@@ -1,6 +1,7 @@
 from copy import deepcopy
-from typing import List, Collection
+from typing import List, Collection, Set
 from itertools import groupby
+from more_itertools import flatten
 from math import degrees, atan2
 
 import plotly.graph_objects as go
@@ -12,7 +13,7 @@ from gcline import GCLine
 from ring import Ring
 from bed import Bed
 from logger import rprint
-from geometry_helpers import visibility4
+from geometry_helpers import visibility4, too_close
 from geometry.utils import angsort
 
 
@@ -36,8 +37,6 @@ class Printer:
 		self.extruder_no    = GCLine(code='T0',  args={}, comment='Switch to main extruder', fake=True)
 		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode', fake=True)
 
-		self.thread_seg = None
-
 		self.debug_non_isecs = []
 
 
@@ -52,6 +51,22 @@ class Printer:
 
 	def __repr__(self):
 		return f'Printer(⚓︎{self.anchor}, ⌾ {self.ring._angle:.2f}°)'
+
+
+	def summarize(self):
+		import textwrap
+		rprint(textwrap.dedent(f"""\
+			[yellow]—————[/]
+			{self}:
+				_x, _y, _z: {self._x}, {self._y}, {self._z}
+				anchor: {self.anchor}
+
+				bed: {self.bed}
+				ring: {self.ring}
+					_angle: {self.ring._angle}
+					center: {self.ring.center}
+			[yellow]—————[/]
+		"""))
 
 
 	def attr_changed(self, attr, old_value, new_value):
@@ -93,7 +108,7 @@ class Printer:
 				#Restore extruder state if it was changed
 				for var in save_vars:
 					if var in saver.changed:
-						self.printer.execute_gcode(saver.saved[var])
+						self.execute_gcode(saver.saved[var])
 						newlines.append(saver.saved[var])
 
 				#Manufacture bogus fractional line numbers for display
@@ -133,10 +148,11 @@ class Printer:
 			if repeats > 5: raise ValueError("Too many repeats")
 			self.debug_non_isecs = []
 			with steps.new_step(f"Move thread to avoid {len(avoid)} segments" + extra_message) as s:
-				self.debug_avoid = avoid.copy()
 				isecs = self.thread_avoid(avoid)
 				#if avoid == isecs: s.valid = False
-				rprint(f"{len(isecs)} intersections")
+				rprint(f"{len(isecs)} intersections:", isecs)
+				if len(avoid) == 1:
+					rprint('Was avoiding:', avoid, indent=2)
 				avoid -= isecs
 			if avoid:
 				with steps.new_step(f"Print {len(avoid)} segments thread doesn't intersect" + extra_message) as s:
@@ -146,24 +162,38 @@ class Printer:
 		self.debug_non_isecs = []
 
 
-	def thread_avoid(self, avoid: Collection[GSegment], move_ring=True, avoid_by=1):
+	def thread_avoid(self, avoid: Collection[GSegment], move_ring=True, avoid_by=1) -> Set[GSegment]:
 		if not avoid: raise ValueError("Need some Segments in avoid")
 		avoid = set(avoid)
+		self.debug_avoid = avoid.copy()
 
 		thr = self.anchor_to_ring()
 		anchor = thr.start_point
 
-		vis = visibility4(anchor, avoid, avoid_by)
+		#If no thread-avoid intersections and the thread is not too close to any
+		# avoid segment endpoints, we don't need to move ring, and are done
+		if(not thr.intersecting(avoid)
+			 and not any(too_close(thr, ep) for ep in (set(flatten(avoid)) - set(thr[:])))):
+			return set()
+
+		vis, ipts = visibility4(anchor, avoid, avoid_by)
 
 		#Get all of the visibility points with N intersections, where N is the
 		# smallest number of intersections
-		n_isecs, vis_points = next(groupby(vis, key=lambda k:len(vis[k])))
+		_, vis_points = next(groupby(vis, key=lambda k:len(vis[k])))
 
 		#Then sort by distance from the thread
-		vis_points = angsort(vis_points, ref=thr)
+		vis_points = angsort(list(vis_points), ref=thr)
 
 		#Now move the thread to the closest one
 		self.thread_intersect(vis_points[0], set_new_anchor=False)
+
+		if vis[vis_points[0]] == avoid:
+			rprint("Result of visibility:", vis[vis_points[0]], "is the same thing we tried to avoid:",
+					avoid, indent=4)
+			rprint(f"intersections {anchor}→{vis_points[0]}:",
+					ipts[vis_points[0]], indent=4)
+			raise ValueError("oh noes")
 
 		#Return the set of segments that we intersected
 		return vis[vis_points[0]]
@@ -199,6 +229,8 @@ class Printer:
 																 ring_point.x - self.ring.center.x))
 
 			if move_ring:
+				if self.ring.angle == ring_angle:
+					rprint(f'Ring already at {ring_angle} deg, not moving')
 				self.ring.set_angle(ring_angle)
 
 		else:
