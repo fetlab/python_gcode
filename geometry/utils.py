@@ -1,8 +1,10 @@
 from math import atan2, pi
 from typing import Collection, List
 from more_itertools import first
-from Geometry3D import Point, Segment, Line, Vector, Plane
+from Geometry3D import Point, Segment, Line, Vector, Plane, HalfLine
+from Geometry3D.utils import get_eps
 
+eps = get_eps()
 
 def sign(n): return -1 if n < 0 else (1 if n > 0 else 0)
 
@@ -88,3 +90,16 @@ def tangent_points(center:Point, radius, p:Point):
 		GPoint(center.x + ad*dx - bd*dxr, center.y + ad*dy - bd*dyr, center.z))
 
 
+def distance_linelike_point(linelike, point):
+	_valid_linelike_types = (HalfLine, Segment)
+
+	if isinstance(linelike, Point) and isinstance(point, _valid_linelike_types):
+		return distance_linelike_point(point, linelike)
+	if not (isinstance(linelike, _valid_linelike_types) and isinstance(point, Point)):
+		return linelike.distance(point)
+
+	vec = linelike.vector if isinstance(linelike, HalfLine) else linelike.line.dv
+
+	aux_plane = Plane(point, vec)
+	foot = aux_plane.intersection(linelike)
+	return None if foot is None else point.distance(foot)

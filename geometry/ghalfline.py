@@ -2,6 +2,7 @@ from typing import Collection, Set
 from fastcore.basics import listify
 from Geometry3D import Vector, HalfLine, Point, Segment, Plane
 from .gpoint import GPoint
+from .utils import distance_linelike_point
 
 class GHalfLine(HalfLine):
 	def __init__(self, a, b=None):
@@ -28,6 +29,7 @@ class GHalfLine(HalfLine):
 
 
 	def distance(self, other):
+		return distance_linelike_point(self, other)
 		if not isinstance(other, Point):
 			return super().distance(other)
 		p = other
