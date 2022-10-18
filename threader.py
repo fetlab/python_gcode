@@ -225,7 +225,7 @@ class Threader:
 					if isecs: raise ValueError("Couldn't avoid anchor segments???")
 				with steps.new_step(f"Print {len(anchorsegs)} anchor-fixing segments") as s:
 					s.add(anchorsegs)
-			elif a != self.printer.bed.anchor:
+			elif a != self.printer.bed.anchor.copy(z=layer.z):
 				rprint(f"[yellow]No segments contain the start anchor[/] {a}")
 
 		#Find geometry that will not be intersected by any thread segments
