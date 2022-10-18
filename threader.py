@@ -180,6 +180,11 @@ class Threader:
 
 		layer.thread = thread
 
+		#Drop thread segments that are too short to worry about
+		thread = [tseg for tseg in thread if tseg.length() > thread_epsilon]
+		if (t1:=len(thread)) != (t2:=len(layer.thread)):
+			rprint(f'Dropped {t2-t1} thread segs due to being shorter than {thread_epsilon} mm')
+
 		rprint(f'{len(thread)} thread segments in this layer:',
 			[f'  {i}. {tseg} ({tseg.length():>5.2f} mm)' for i, tseg in enumerate(thread)])
 
@@ -214,13 +219,6 @@ class Threader:
 					s.add(anchorsegs)
 			elif a != self.printer.bed.anchor:
 				rprint(f"[yellow]No segments contain the start anchor[/] {a}")
-
-		#Drop thread segments that are too short to worry about
-		thread = [tseg for tseg in thread if tseg.length() > thread_epsilon]
-		if (t1:=len(thread)) != (t2:=len(layer.thread)):
-			rprint(f'Dropped {t2-t1} thread segs due to being shorter than {thread_epsilon}',
-					f'now {t1} left')
-			if t1 > 0: rprint('\n'.join([f'  {tseg}' for tseg in thread]))
 
 		#Find geometry that will not be intersected by any thread segments
 		to_print = unprinted(layer.non_intersecting(thread) if thread else layer.geometry.segments)
