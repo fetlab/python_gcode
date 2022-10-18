@@ -205,6 +205,9 @@ class GCLines(UserList):
 			raise IndexError(f'GCLine number {lineno} not in GCLines')
 
 
+	def __setitem__(self, lineno, line:GCLine):
+		self.data[self._index[lineno]] = line
+
 	def __repr__(self):
 		return f'{self.summary()}\n' + '\n'.join(map(repr, self.data))
 
