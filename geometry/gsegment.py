@@ -155,3 +155,7 @@ class GSegment(Segment):
 			return self * other
 		return self.copy(end_point=self.end_point.moved(self.line.dv.normalized() * other))
 
+
+
+	def distance(self, other):
+		return distance_linelike_point(self, other)
