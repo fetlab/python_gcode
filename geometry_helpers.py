@@ -8,7 +8,7 @@ from more_itertools import flatten
 from geometry.gpoint import GPoint
 from geometry.gsegment import GSegment
 from geometry.ghalfline import GHalfLine, GHalfLine as HalfLine
-from geometry.utils import tangent_points
+from geometry.utils import tangent_points, eps
 
 
 Geometry = make_dataclass('Geometry', ['segments', 'planes', 'outline'])
@@ -117,32 +117,54 @@ def visibility3(origin:GPoint, query:Collection[GSegment], avoid_by=1):
 
 
 def visibility4(origin:GPoint, query:Collection[GSegment], avoid_by=1) -> Dict[GPoint, Set]:
+	"""Calculate visibility for `origin` with respect to `query`, attempting to
+	ensure `avoid_by` mm of avoidance. For every potential visibility point,
+	return the segments intersected by a ray from `origin` to that point:
+
+		{visible_point: {segments intersected}, ...}
+
+	This returned dict is sorted by the number of intersected segments.
+	"""
 	endpoints = set(flatten(query)) - {origin}
 	tanpoints = set(flatten(
-			tangent_points(p, avoid_by, origin) for p in endpoints))
-	isecs = {}
+			tangent_points(p, avoid_by, origin) for p in endpoints if
+			origin.distance(p) > avoid_by))
+	isecs:Dict[GPoint, Set] = {}
+	isec_points:Dict[GPoint, Set] = {}
 
 	for tp in tanpoints:
 		hl = HalfLine(origin, tp)
 		isecs[tp] = set()
+		isec_points[tp] = set()
 		for seg in query:
 			isec = False
-			if hl.intersecting(seg):
+			isec_points[tp] = hl.intersecting(seg)
+			if isec_points[tp]:
 				isec = True
 			if not isec:
 				if seg.start_point != origin:
 					d = hl.distance(seg.start_point)
-					if d is not None and d < avoid_by:
+					if d is not None and (d - avoid_by <= -eps):
 						isec = True
+						isec_points[tp] = (f'dist from {hl} to start {seg.start_point} = {d} < {avoid_by}', hl, seg)
 			if not isec:
 				d = hl.distance(seg.end_point)
-				if d is not None and d < avoid_by:
+				if d is not None and (d - avoid_by <= -eps):
 					isec = True
+					isec_points[tp] = (f'dist from {hl} to end {seg.end_point} = {d} < {avoid_by}',
+												hl, seg)
 
 			if isec:
 				isecs[tp].add(seg)
 
-	return dict(sorted(isecs.items(), key=lambda x:len(x[1])))
+	return dict(sorted(isecs.items(), key=lambda x:len(x[1]))), isec_points
+
+
+def too_close(a, b, by=1):
+	"""Return True if the distance between `a` and `b` is <= `by` (taking into
+	account imprecision via `eps`)."""
+	d = a.distance(b)
+	return False if d is None else d - by <= -eps
 
 
 def visibility5(origin:GPoint, query:Collection[GSegment], avoid_by=.5):
@@ -224,7 +246,7 @@ def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 				line.segment = GSegment(last, line, z=z, gc_lines=extra, is_extrude=line.is_xyextrude())
 				segments.append(line.segment)
 				last = line
-				extra = []
+				extra = GCLines()
 			elif line.is_xymove():
 				if not last.is_xyextrude():
 					extra.append(last)
@@ -243,7 +265,7 @@ def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 				line.segment = GSegment(last, line, z=z, gc_lines=extra, is_extrude=line.is_xyextrude())
 				segments.append(line.segment)
 				last  = line
-				extra = []
+				extra = GCLines()
 			else: #non-move line following a move line
 				extra.append(line)
 
