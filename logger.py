@@ -1,5 +1,6 @@
 import logging
 from lablogging   import AccordionHandler
+from rich_handler import RichHandler
 from rich_output_handler import RichOutputWidgetHandler
 import rich.terminal_theme
 
@@ -30,6 +31,11 @@ def rprint(*args, indent_char=' ', indent=0, **kwargs):
 	rich_log.debug(msg, extra={'style':style, 'div':div})
 
 
+def restart_logging():
+	for handler in rich_log.handlers:
+			rich_log.removeHandler(handler)
+
+
 def reinit_logging(acclog=None):
 	if acclog is None and rich_log.hasHandlers():
 		for handler in rich_log.handlers:
@@ -47,6 +53,16 @@ def reinit_logging(acclog=None):
 			})
 	rich_log.addHandler(acclog)
 	return acclog
+
+
+def end_accordion_logging():
+	for handler in rich_log.handlers:
+		if isinstance(handler, (AccordionHandler,RichHandler,RichOutputWidgetHandler)):
+			rich_log.removeHandler(handler)
+	rich_log.addHandler(RichHandler(
+			theme=rich.terminal_theme.MONOKAI,
+			html_style={'line-height': 2},
+		))
 
 
 def get_accordion():
