@@ -7,6 +7,9 @@ from pathlib      import Path
 
 Point3 = namedtuple('Point3', 'x y z')
 
+def unprinted(iterable):
+	return set(filter(lambda s:not s.printed, iterable))
+
 
 class GCodeException(Exception):
 	"""Utility class so we can get an object for debugging easily. Use in this
