@@ -50,7 +50,7 @@ class Threader:
 
 	def gcode(self):
 		"""Return the gcode for all layers."""
-		r = self.gcode_file.preamble.lines.data if self.gcode_file.preamble else []
+		r = self.gcode_file.preamble.lines.data.copy() if self.gcode_file.preamble else []
 		for steps_obj in self.layer_steps:
 			r.append(GCLine(fake=True, comment=f'==== Start layer {steps_obj.layer.layernum} ===='))
 			r.extend(steps_obj.gcode())
@@ -92,8 +92,7 @@ class Threader:
 
 
 	def _route_layer(self, thread_list: List[GSegment], layer, start_anchor=None, debug_plot=False):
-
-		self.printer.z     = layer.z
+		self.printer.z = layer.z
 
 		self.layer_steps.append(Steps(layer=layer, printer=self.printer, debug_plot=debug_plot))
 		steps = self.layer_steps[-1]
