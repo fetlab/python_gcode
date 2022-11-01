@@ -1,9 +1,13 @@
 from Geometry3D import Circle, Vector
 from math import degrees, cos, radians, sin
+from typing import Tuple, List
 
 from gcline import GCLine
-from geometry import GPoint
+from geometry import GPoint, GSegment, GHalfLine
+from geometry.gcast import gcast
+from geometry.utils import eq2d
 from util import attrhelper
+from logger import rprint
 
 from plot_helpers import update_figure
 
@@ -20,7 +24,7 @@ class Ring:
 		self.radius        = radius
 		self._angle        = angle
 		self.initial_angle = angle
-		self.center        = center or GPoint(radius, 0, 0)
+		self.center        = GPoint(radius, 0, 0) if center is None else GPoint(center).copy()
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
 
 		#Defaults for rotating gear
@@ -35,26 +39,26 @@ class Ring:
 		self.esteps_degree = int(
 			steps_per_rotation * ring_gear_teeth / motor_gear_teeth / 360)
 
-
 	x = property(**attrhelper('center.x'))
-	y = property(**attrhelper('center.y'))
 	z = property(**attrhelper('center.z'))
 
 
 	def __repr__(self):
 		return f'Ring({self._angle:.2f}°, {self.center})'
 
+	@property
+	def y(self): return self.center.y
+
+	@y.setter
+	def y(self, val):
+		if val == self.center.y: return
+		mv = Vector(0, val - self.center.y, 0)
+		self.center.move(mv)
+		self.geometry.move(mv)
+
 
 	def attr_changed(self, attr, old_value, new_value):
-		# TODO: when we get a y coordinate, need to shift the center of the ring by
-		# -y, which also means modifying self.geometry, so that thread_intersect()
-		# will properly rotate the ring to maintain the thread trajectory
-		if attr == 'y':
-			mv = Vector(0, new_value - old_value, 0)
-			self.center.move(mv)
-			self.geometry.move(mv)
-		else:
-			raise ValueError(f"Can't adjust the {attr} coordinate of the ring!")
+		raise ValueError(f"Can't adjust the {attr} coordinate of the ring!")
 
 
 	@property
@@ -63,7 +67,7 @@ class Ring:
 
 
 	@angle.setter
-	def angle(self, new_pos:degrees):
+	def angle(self, new_pos):
 		self.set_angle(new_pos)
 
 
@@ -72,7 +76,25 @@ class Ring:
 		return self.angle2point(self.angle)
 
 
-	def set_angle(self, new_angle:degrees, direction=None):
+	def intersection(self, seg:GSegment|GHalfLine) -> List[GPoint]:
+		"""Return the intersection points between the passed GSegment and the ring,
+		sorted by distance to seg.start_point ."""
+		#Form a half line (basically a ray) from the anchor through the target
+		hl = (seg if isinstance(seg, GHalfLine) else GHalfLine(seg.start_point, seg.end_point)).as2d()
+
+		#isecs = filter(None, map(hl.intersection, self.ring.geometry.segments))
+
+		isecs = hl.intersections(self.geometry)
+		if isecs is None: return []
+
+		#The intersection is always a Segment; we want to sort by distance to the
+		# input segment, but avoiding the start point of the segment.
+		return sorted(
+				[gcast(i) for i in isecs[:] if not eq2d(i, seg.start_point)],
+				key=lambda p: seg.start_point.distance(p))
+
+
+	def set_angle(self, new_angle, direction=None):
 		"""Set a new angle for the ring. Optionally provide a preferred movement
 		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
 		self.initial_angle = self._angle
@@ -89,7 +111,7 @@ class Ring:
 		)
 
 
-	def angle2point(self, angle:degrees):
+	def angle2point(self, angle):
 		"""Return an x,y,z=0 location on the ring based on the given angle, without
 		moving the ring. Assumes that the bed's bottom-left corner is (0,0).
 		Doesn't take into account a machine that uses bed movement for the y-axis,
