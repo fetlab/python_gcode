@@ -2,7 +2,7 @@ from typing import List
 from enum import Enum
 
 from geometry import GSegment, GPoint
-from util import linf, Saver
+from util import linf, Saver, unprinted
 from logger import rprint, rich_log
 import logging
 
@@ -55,6 +55,7 @@ class Step:
 		gcode = []
 
 		if not self.gcsegs:
+			rprint("No gcsegs")
 			if self.printer.ring.initial_angle != self.printer.ring.angle:
 				#Variables to be restored, in the order they should be restored: we
 				# "execute" each line of ring-movement gcode to update the machine
@@ -76,7 +77,6 @@ class Step:
 
 				gcode.extend(newlines)
 			return gcode
-		return []
 
 		#Sort gcsegs by the first gcode line number in each
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
@@ -136,11 +136,10 @@ class Step:
 
 
 	def add(self, gcsegs:List[GSegment]):
-		rprint(f'Adding {len([s for s in gcsegs if not s.printed])}/{len(gcsegs)} unprinted gcsegs to Step')
-		for seg in gcsegs:
-			if not seg.printed:
-				self.gcsegs.append(seg)
-				seg.printed = True
+		rprint(f'Adding {len(unprinted(gcsegs))}/{len(gcsegs)} unprinted gcsegs to Step')
+		for seg in unprinted(gcsegs):
+			self.gcsegs.append(seg)
+			seg.printed = True
 
 
 	def __enter__(self):
