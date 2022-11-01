@@ -9,6 +9,13 @@ eps = get_eps()
 def sign(n): return -1 if n < 0 else (1 if n > 0 else 0)
 
 
+def eq2d(a, b):
+	"""Test equality only on x and y."""
+	if not (isinstance(a, b.__class__) or isinstance(b, a.__class__)): return False
+	try: return eq2d(a[0], b[0])  #Covers Segment, Point, Vector
+	except (IndexError, TypeError): return a == b
+
+
 def min_max_xyz(objs:Collection):
 	"""Given a list of Points or Segments, return
 		(minx, miny, minz), (maxx, maxy, maxz)"""
