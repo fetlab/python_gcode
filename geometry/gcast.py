@@ -7,7 +7,7 @@ def gcast(obj):
 	try:
 		return globals()['G' + obj.__class__.__name__](obj)
 	except KeyError:
-		if obj is not None:
+		if obj is not None and not obj.__class__.__name__.startswith('G'):
 			print(f'Type G{obj.__class__.__name__} not in globals():')
 			print([k for k in globals() if k[0] != '_'])
 		return obj
