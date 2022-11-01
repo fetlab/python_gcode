@@ -151,6 +151,11 @@ class GSegment(Segment):
 		return [self.moved(mv1), self.moved(mv2)] + ([self] if inc_self else [])
 
 
+	#Support +/- with a GPoint by treating the point as a vector
+	def __add__(self, other:GPoint): return self.moved(Vector(*other))
+	def __sub__(self, other:GPoint): return self.moved(Vector(*-other))
+
+
 	def __mul__(self, other):
 		if not isinstance(other, (int, float)):
 			return self * other
