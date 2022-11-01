@@ -8,12 +8,13 @@ from rich import print
 from rich.pretty import pretty_repr
 from itertools import pairwise
 
-from logger import rprint, reinit_logging
+from logger import rprint, restart_logging, reinit_logging, end_accordion_logging
 
 from printer import Printer
 from steps import Steps
 
 print('reload threader')
+restart_logging()
 
 # --- Options for specific setups ---
 # What size does the slicer think the bed is?
@@ -72,7 +73,10 @@ class Threader:
 											debug_plot=debug_plot)
 			except:
 				self.acclog.unfold()
+				end_accordion_logging()
 				raise
+
+		end_accordion_logging()
 
 
 	def route_layer(self, thread_list: List[GSegment], layer, start_anchor=None, debug_plot=False):
@@ -85,9 +89,9 @@ class Threader:
 		self.acclog.show()
 		try:
 			self._route_layer(thread_list, layer, start_anchor, debug_plot=debug_plot)
-		except:
+		finally:
 			self.acclog.unfold()
-			raise
+			end_accordion_logging()
 
 
 	def _route_layer(self, thread_list: List[GSegment], layer, start_anchor=None, debug_plot=False):
