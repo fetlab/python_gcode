@@ -12,6 +12,7 @@ from logger import rprint, restart_logging, reinit_logging, end_accordion_loggin
 
 from printer import Printer
 from steps import Steps
+from util import unprinted
 
 print('reload threader')
 restart_logging()
@@ -38,10 +39,6 @@ Usage notes:
 	* The thread should be anchored on the bed such that it doesn't intersect the
 		model on the way to its first model-anchor point.
 """
-
-def unprinted(iterable):
-	return set(filter(lambda s:not s.printed, iterable))
-
 
 class Threader:
 	def __init__(self, gcode_file:GcodeFile):
