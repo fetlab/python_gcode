@@ -70,10 +70,16 @@ class Printer:
 
 
 	def attr_changed(self, attr, old_value, new_value):
-		if attr[1] in 'xy':
-			setattr(self.ring, attr[1], new_value)
+		if attr[1] == 'y':
+			curr_thread = GHalfLine(self.anchor, self.ring.point)
+			self.ring.y = -new_value
+			isec = self.ring.intersection(curr_thread)
+
 			#Move the ring to keep the thread intersecting the anchor
-			self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
+			#TODO: this reuses the anchor so doesn't work!
+			#self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
+
+
 
 
 	def freeze_state(self):
@@ -122,7 +128,7 @@ class Printer:
 
 	def execute_gcode(self, gcline:GCLine):
 		"""Update the printer state according to the passed line of gcode. Return
-		the line of gcode for convenience."""
+		the line of gcode for convenience. Assumes absolute coordinates."""
 		if gcline.is_xymove():
 			self.x = gcline.args['X']
 			self.y = gcline.args['Y']
@@ -208,21 +214,7 @@ class Printer:
 		if target.as2d() != anchor.as2d():
 			#Form a half line (basically a ray) from the anchor through the target
 			hl = GHalfLine(anchor, target.as2d())
-
-			#isecs = filter(None, map(hl.intersection, self.ring.geometry.segments))
-
-			isec = hl.intersection(self.ring.geometry)
-			if isec is None:
-				raise GCodeException(hl, "Anchor->target ray doesn't intersect ring")
-
-			#The intersection is always a Segment; we want the endpoint furthest from
-			# the anchor
-			try:
-				ring_point = sorted(isec[:], key=lambda p: anchor.distance(p),
-						reverse=True)[0]
-			except NotImplementedError:
-				rprint(f'Error: isec is ({type(isec)}): {isec}')
-				raise
+			ring_point = self.ring.intersection(hl)[1]
 
 			#Now we need the angle between center->ring and the x axis
 			ring_angle = degrees(atan2(ring_point.y - self.ring.center.y,
@@ -234,7 +226,7 @@ class Printer:
 				self.ring.set_angle(ring_angle)
 
 		else:
-			rprint('thread_intersect with target == anchor, doing nothing')
+			#rprint('thread_intersect with target == anchor, doing nothing')
 			ring_angle = self.ring.angle
 
 		if set_new_anchor:
