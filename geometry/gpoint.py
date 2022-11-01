@@ -1,5 +1,6 @@
+from __future__ import annotations     #Allow self-referencing for typing inside class
 from copy import copy
-from Geometry3D import Point
+from Geometry3D import Point, Vector
 from fastcore.basics import listify
 
 class GPoint(Point):
@@ -39,8 +40,18 @@ class GPoint(Point):
 		else:
 			raise ValueError(f"Can't init GPoint with args {args}")
 
+
 	def __repr__(self):
 		return "{{{:>6.2f}, {:>6.2f}, {:>6.2f}}}".format(self.x, self.y, self.z)
+
+
+	def __neg__(self):
+		return self.__class__(-self.x, -self.y, -self.z)
+
+
+	def __add__(self, other:GPoint): return self.moved(Vector(*other))
+	def __sub__(self, other:GPoint): return self.moved(Vector(*-other))
+
 
 	def as2d(self):
 		"""Return a copy of this point with *z* set to 0. If z is already 0, return self."""
