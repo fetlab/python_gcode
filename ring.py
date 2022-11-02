@@ -44,7 +44,7 @@ class Ring:
 
 
 	def __repr__(self):
-		return f'Ring({self._angle:.2f}°, {self.center})'
+		return f'Ring(⌀{self.radius*2}, {self._angle:.2f}°, {self.center})'
 
 	@property
 	def y(self): return self.center.y
