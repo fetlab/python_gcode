@@ -88,7 +88,7 @@ class Ring:
 
 		#The intersection is always a Segment; we want to sort by distance to the
 		# input segment, but avoiding the start point of the segment.
-		return sorted(isecs, key=lambda p: seg.start_point.distance(p))
+		return sorted(isecs, key=lambda p: hl.point.distance(p))
 
 
 	def set_angle(self, new_angle, direction=None):
