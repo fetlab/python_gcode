@@ -18,6 +18,11 @@ class GHalfLine(HalfLine):
 		return self.__class__(GPoint.as2d(self.point), self.vector)
 
 
+	def intersection(self, other):
+		from .gcast import gcast
+		return gcast(super().intersection(other))
+
+
 	def intersecting(self, check:Collection[Segment]) -> Set[Segment]:
 		"""Return Segments in check which this HalfLine intersects with,
 		ignoring intersections with the start point of this HalfLine."""
