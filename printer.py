@@ -9,6 +9,7 @@ from plot_helpers import segs_xy, update_figure
 
 from util import attrhelper, Saver, GCodeException
 from geometry import GPoint, GSegment, GHalfLine
+from geometry.utils import eq2d
 from gcline import GCLine
 from ring import Ring
 from bed import Bed
@@ -210,20 +211,20 @@ class Printer:
 		"""Rotate the ring so that the thread starting at anchor intersects the
 		target Point. By default sets the anchor to the intersection. Return the
 		rotation value."""
-		anchor = anchor or self.anchor.as2d()
-		if target.as2d() != anchor.as2d():
-			#Form a half line (basically a ray) from the anchor through the target
-			hl = GHalfLine(anchor, target.as2d())
-			ring_point = self.ring.intersection(hl)[1]
+		anchor = (anchor or self.anchor).as2d()
+		target = target.as2d()
+		if target != anchor:
+			if isecs := self.ring.intersection(GHalfLine(anchor, target)):
+				ring_point = isecs[-1]
 
-			#Now we need the angle between center->ring and the x axis
-			ring_angle = degrees(atan2(ring_point.y - self.ring.center.y,
-																 ring_point.x - self.ring.center.x))
+				#Now we need the angle between center->ring and the x axis
+				ring_angle = degrees(atan2(ring_point.y - self.ring.center.y,
+																	 ring_point.x - self.ring.center.x))
 
-			if move_ring:
-				if self.ring.angle == ring_angle:
-					rprint(f'Ring already at {ring_angle} deg, not moving')
-				self.ring.set_angle(ring_angle)
+				if move_ring:
+					if self.ring.angle == ring_angle:
+						rprint(f'Ring already at {ring_angle} deg, not moving')
+					self.ring.set_angle(ring_angle)
 
 		else:
 			#rprint('thread_intersect with target == anchor, doing nothing')
