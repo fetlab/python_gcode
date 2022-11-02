@@ -84,14 +84,12 @@ class Ring:
 
 		#isecs = filter(None, map(hl.intersection, self.ring.geometry.segments))
 
-		isecs = hl.intersections(self.geometry)
+		isecs = hl.intersections(self.geometry.segments())
 		if isecs is None: return []
 
 		#The intersection is always a Segment; we want to sort by distance to the
 		# input segment, but avoiding the start point of the segment.
-		return sorted(
-				[gcast(i) for i in isecs[:] if not eq2d(i, seg.start_point)],
-				key=lambda p: seg.start_point.distance(p))
+		return sorted(isecs, key=lambda p: seg.start_point.distance(p))
 
 
 	def set_angle(self, new_angle, direction=None):
