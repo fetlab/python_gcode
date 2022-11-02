@@ -4,7 +4,6 @@ from typing import Tuple, List
 
 from gcline import GCLine
 from geometry import GPoint, GSegment, GHalfLine
-from geometry.gcast import gcast
 from geometry.utils import eq2d
 from util import attrhelper
 from logger import rprint

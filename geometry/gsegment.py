@@ -3,6 +3,7 @@ from typing import Collection, Set, List
 from Geometry3D import Vector, Segment, Point, Line
 from fastcore.basics import listify
 from .gpoint import GPoint
+from .gcast import gcast
 from .utils import distance_linelike_point
 
 class GSegment(Segment):
@@ -89,13 +90,11 @@ class GSegment(Segment):
 	# https://docs.python.org/3/reference/datamodel.html#object.__hash__
 	__hash__ = Segment.__hash__
 
+	intersection = gcast(Segment.intersection)
+
+
 	def __eq__(self, other):
 		return False if not isinstance(other, Segment) else super().__eq__(other)
-
-
-	def intersection(self, other):
-		from .gcast import gcast
-		return gcast(super().intersection(other))
 
 
 	def intersecting(self, check, ignore:Point | Collection[Point]=()) -> Set[Segment]:

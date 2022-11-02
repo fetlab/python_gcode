@@ -3,6 +3,7 @@ from fastcore.basics import listify
 from Geometry3D import Vector, HalfLine, Point, Segment, Plane
 from .gpoint import GPoint
 from .utils import distance_linelike_point
+from .gcast import gcast
 
 class GHalfLine(HalfLine):
 	def __init__(self, a, b=None):
@@ -13,14 +14,11 @@ class GHalfLine(HalfLine):
 			b = GPoint(b) if isinstance(b, (tuple, list, set, Point)) else b
 		super().__init__(a, b)
 
+	intersection = gcast(HalfLine.intersection)
+
 
 	def as2d(self):
 		return self.__class__(GPoint.as2d(self.point), self.vector)
-
-
-	def intersection(self, other):
-		from .gcast import gcast
-		return gcast(super().intersection(other))
 
 
 	def intersecting(self, check:Collection[Segment]) -> Set[Segment]:
