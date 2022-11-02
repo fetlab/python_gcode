@@ -30,8 +30,10 @@ class GHalfLine(HalfLine):
 
 
 	def intersections(self, check:Collection[Segment]) -> Set[Segment]:
-		return set(filter(lambda x:x not in [None, self.point],
-			[self.intersection(seg) for seg in listify(check)]))
+		"""Return all intersection points of this GHalfLine with the Segments in
+		`check`."""
+		return set(filter(lambda i: i not in [None, self.point],
+											[self.intersection(seg) for seg in listify(check)]))
 
 
 	def __repr__(self):
