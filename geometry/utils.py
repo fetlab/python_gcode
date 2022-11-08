@@ -60,6 +60,13 @@ def ccw_dist(p,a,c):
 	return v if v > 0 else v + 2*pi
 
 
+#Source: https://stackoverflow.com/a/28037434
+def ang_diff(a, b):
+	"""Return the shortest distance to go bewteen angles a and b."""
+	diff = (b - a + 180) % 360 - 180
+	return diff + 360 if diff < -180 else diff
+
+
 def ang_dist(p,c,a):
 	"""Return the angular distance of Point p with respect to the line formed by c->a"""
 	return atan2(p.y-c.y, p.x-c.x) - atan2(a.y-c.y, a.x-c.x)
