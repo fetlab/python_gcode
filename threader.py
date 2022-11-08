@@ -10,7 +10,7 @@ from itertools import pairwise
 
 from logger import rprint, restart_logging, reinit_logging, end_accordion_logging
 
-from printer import Printer
+from ender3 import Ender3
 from steps import Steps
 from util import unprinted
 
@@ -43,7 +43,7 @@ Usage notes:
 class Threader:
 	def __init__(self, gcode_file:GcodeFile):
 		self.gcode_file  = gcode_file
-		self.printer     = Printer(effective_bed_size, ring_center, ring_radius)
+		self.printer     = Ender3()
 		self.layer_steps: List[Steps] = []
 		self.acclog      = reinit_logging()
 
