@@ -55,7 +55,6 @@ class Step:
 		gcode = []
 
 		if not self.gcsegs:
-			rprint("No gcsegs")
 			if self.printer.ring.initial_angle != self.printer.ring.angle:
 				#Variables to be restored, in the order they should be restored: we
 				# "execute" each line of ring-movement gcode to update the machine
@@ -76,6 +75,7 @@ class Step:
 						newlines.append(saver.saved[var])
 
 				gcode.extend(newlines)
+
 			return gcode
 
 		#Sort gcsegs by the first gcode line number in each
@@ -109,14 +109,14 @@ class Step:
 			# right place for the extrude.
 			if len(seg.gc_lines) > 2:
 				for line in seg.gc_lines:
-					gcode.append(self.printer.execute_gcode(line))
+					gcode.extend(self.printer.execute_gcode(line))
 				continue
 
 			#For 2-line Segments
 			l1, l2 = seg.gc_lines.data
 
 			if l1.is_xymove() and not l1.is_xyextrude():
-				gcode.append(self.printer.execute_gcode(l1))
+				gcode.extend(self.printer.execute_gcode(l1))
 
 			line_diff = l2.lineno - gcode[-1].lineno if gcode else float('inf')
 			if line_diff > 0:
@@ -127,10 +127,9 @@ class Step:
 						new_line.comment = f'---- Skipped {gcode[-1].lineno+1}–{l2.lineno-1}; fake move from {new_line.lineno}'
 					else:
 						new_line.comment = f'---- Fake move from {new_line.lineno}'
-					rprint(f'new line from {new_line.lineno}')
 					new_line.lineno = ''
-					gcode.append(self.printer.execute_gcode(new_line))
-				gcode.append(self.printer.execute_gcode(l2))
+					gcode.extend(self.printer.execute_gcode(new_line))
+				gcode.extend(self.printer.execute_gcode(l2))
 
 		return gcode
 
