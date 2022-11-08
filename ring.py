@@ -38,12 +38,14 @@ class Ring:
 		self.esteps_degree = int(
 			steps_per_rotation * ring_gear_teeth / motor_gear_teeth / 360)
 
+		rprint(f"Ring created: {self}")
+
 	x = property(**attrhelper('center.x'))
 	z = property(**attrhelper('center.z'))
 
 
 	def __repr__(self):
-		return f'Ring(⌀{self.radius*2}, {self._angle:.2f}°, {self.center})'
+		return f'Ring(⌀{self.radius*2}, {self._angle:.2f}°, ⊙{self.center})'
 
 	@property
 	def y(self): return self.center.y
