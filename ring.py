@@ -4,7 +4,7 @@ from typing import Tuple, List
 
 from gcline import GCLine
 from geometry import GPoint, GSegment, GHalfLine
-from geometry.utils import eq2d
+from geometry.utils import eq2d, ang_diff
 from util import attrhelper
 from logger import rprint
 
@@ -74,22 +74,18 @@ class Ring:
 		#Form a half line (basically a ray) from the anchor through the target
 		hl = (seg if isinstance(seg, GHalfLine) else GHalfLine(seg.start_point, seg.end_point)).as2d()
 
-		#isecs = filter(None, map(hl.intersection, self.ring.geometry.segments))
-
 		isecs = hl.intersections(self.geometry.segments())
 		if isecs is None: return []
 
-		#The intersection is always a Segment; we want to sort by distance to the
-		# input segment, but avoiding the start point of the segment.
+		#Sort intersections by distance to the start point of the HalfLine
 		return sorted(isecs, key=lambda p: hl.point.distance(p))
 
 
-	def set_angle(self, new_angle, direction=None):
+	def set_angle(self, new_angle):
 		"""Set a new angle for the ring. Optionally provide a preferred movement
 		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
 		self.initial_angle = self._angle
 		self._angle = new_angle
-		self._direction = direction
 
 
 	def carrier_location(self, offset=0):
@@ -127,20 +123,17 @@ class Ring:
 			return []
 
 		#Find "extrusion" amount - requires M92 has set steps/degree correctly
-		dist = self.angle - self.initial_angle
-		dir_mul = -1 if ((dist+360)%360 < 180) else 1  #Determine CW/CCW rotation
-		extrude = self.rot_mul * dist * dir_mul
-
-		if extrude < 1: return []
+		dist = ang_diff(self.initial_angle, self.angle)
+		extrude = self.rot_mul * dist
+		dir_str = 'CCW' if dist > 0 else 'CW'
 
 		gc = ([
 			GCLine(code='T1', comment='Switch to ring extruder', fake=True),
 			GCLine(code='M82', comment='Set relative extrusion mode', fake=True),
 			GCLine(code='G1', args={'E':round(extrude,3), 'F':8000},
-				comment=f'Ring move from {self.initial_angle:.2f}° to {self.angle:.2f}°', fake=True),
+				comment=f'Ring move {dir_str} from {self.initial_angle:.2f}° to {self.angle:.2f}°', fake=True),
 		])
 
-		self._angle = self.initial_angle
 		return gc
 
 
