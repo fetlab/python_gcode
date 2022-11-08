@@ -69,8 +69,10 @@ class GPoint(Point):
 		return len([s for s in seglist if test_seg.intersection(s.as2d())]) % 2
 
 
-	def copy(self, z=None):
+	def copy(self, x=None, y=None, z=None):
 		c = copy(self)
+		if x is not None: c.x = x
+		if y is not None: c.y = y
 		if z is not None: c.z = z
 		return c
 
