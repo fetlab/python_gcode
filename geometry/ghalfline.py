@@ -29,7 +29,7 @@ class GHalfLine(HalfLine):
 
 	def intersections(self, check:Collection[Segment]) -> Set[Segment]:
 		"""Return all intersection points of this GHalfLine with the Segments in
-		`check`."""
+		`check`, where the intersection is not the start point of this HalfLine."""
 		return set(filter(lambda i: i not in [None, self.point],
 											[self.intersection(seg) for seg in listify(check)]))
 
