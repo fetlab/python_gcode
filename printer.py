@@ -1,4 +1,4 @@
-from copy import deepcopy
+from copy import deepcopy, copy
 from typing import List, Collection, Set
 from itertools import groupby
 from more_itertools import flatten
@@ -20,17 +20,18 @@ from geometry.utils import angsort
 
 class Printer:
 	"""Maintains the state of the printer/ring system. Holds references to the
-	Ring and Bed objects.
+	Ring and Bed objects. Subclass this object to handle situations where the
+	coordinate systems need transformations.
 	"""
 	style = {
 		'thread': {'mode':'lines', 'line': dict(color='white', width=1, dash='dot')},
 		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=4)},
 	}
 
-	def __init__(self, effective_bed_size, ring_center, ring_radius, z=0):
+	def __init__(self, effective_bed_size:tuple[Number, Number], ring_radius:Number, z:Number=0):
 		self._x, self._y, self._z = 0, 0, z
 		self.bed  = Bed(size=effective_bed_size)
-		self.ring = Ring(radius=ring_radius, center=GPoint(ring_center[0], ring_center[1], z))
+		self.ring = Ring(radius=ring_radius, center=GPoint(0, 0, z))
 
 		self.anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
@@ -51,7 +52,7 @@ class Printer:
 
 
 	def __repr__(self):
-		return f'Printer(⚓︎{self.anchor}, ⌾ {self.ring._angle:.2f}°)'
+		return f'Printer(⚓︎{self.anchor}, ∡ {self.ring._angle:.2f}°)'
 
 
 	def summarize(self):
@@ -71,6 +72,7 @@ class Printer:
 
 
 	def attr_changed(self, attr, old_value, new_value):
+		return
 		if attr[1] == 'y':
 			curr_thread = GHalfLine(self.anchor, self.ring.point)
 			self.ring.y = -new_value
@@ -86,17 +88,14 @@ class Printer:
 		return deepcopy(self)
 
 
-	def execute_gcode(self, gcline:GCLine):
+	def execute_gcode(self, gcline:GCLine) -> List:
 		"""Update the printer state according to the passed line of gcode. Return
 		the line of gcode for convenience. Assumes absolute coordinates."""
-		if gcline.is_xymove():
-			self.x = gcline.args['X']
-			self.y = gcline.args['Y']
-		elif gcline.code in ['M82', 'M83']:
+		if gcline.code in ['M82', 'M83']:
 			self.extrusion_mode = gcline
 		elif gcline.code and gcline.code[0] == 'T':
 			self.extruder_no = gcline
-		return gcline
+		return [gcline]
 
 
 	def anchor_to_ring(self) -> GSegment:
@@ -114,11 +113,11 @@ class Printer:
 			if repeats > 5: raise ValueError("Too many repeats")
 			self.debug_non_isecs = []
 			with steps.new_step(f"Move thread to avoid {len(avoid)} segments" + extra_message) as s:
+				s.debug_avoid = copy(avoid)
 				isecs = self.thread_avoid(avoid)
-				#if avoid == isecs: s.valid = False
 				rprint(f"{len(isecs)} intersections:", isecs)
-				if len(avoid) == 1:
-					rprint('Was avoiding:', avoid, indent=2)
+				if len(isecs) == 0: s.valid = False
+				if len(avoid) == 1: rprint('Was avoiding:', avoid, indent=2)
 				avoid -= isecs
 			if avoid:
 				with steps.new_step(f"Print {len(avoid)} segments thread doesn't intersect" + extra_message) as s:
@@ -177,7 +176,8 @@ class Printer:
 				ring_point = isecs[-1]
 
 				#Now we need the angle between center->ring and the x axis
-				ring_angle = degrees(atan2(ring_point.y - self.ring.center.y,
+				ring_angle = self.ring.point2angle(ring_point)
+				degrees(atan2(ring_point.y - self.ring.center.y,
 																	 ring_point.x - self.ring.center.x))
 
 				if move_ring:
