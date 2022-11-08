@@ -37,6 +37,9 @@ class Steps:
 		# if step.debug_plot:
 		# 	with get_output():
 		# 		self.plot(stepnum=step.number)
+		if not step.valid:
+			rprint(f"Step {step.number} invalid, deleting")
+			del(self.steps[-1])
 
 
 	def gcode(self):
