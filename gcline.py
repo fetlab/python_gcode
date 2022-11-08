@@ -69,8 +69,7 @@ class GCLine:
 
 
 	def __repr__(self):
-		r = '[{}] '.format(self.lineno) if self.lineno else ''
-		return r + self.construct()
+		return self.construct()
 
 
 	def is_xymove(self):
@@ -115,7 +114,7 @@ class GCLine:
 		if self.code:
 			out.append(self.code)
 		out.extend(['{}{}'.format(k, v) for k,v in args.items()])
-		comment = f'; [{self.lineno}]'
+		comment = f'; [{self.lineno}]' if self.lineno else '; '
 		if self.comment:
 			comment += f' {self.comment}'
 		out.append(comment)
