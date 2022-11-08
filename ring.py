@@ -1,5 +1,5 @@
 from Geometry3D import Circle, Vector
-from math import degrees, cos, radians, sin
+from math import degrees, cos, radians, sin, atan2
 from typing import Tuple, List
 
 from gcline import GCLine
@@ -118,6 +118,12 @@ class Ring:
 			sin(radians(angle)) * self.radius + self.center.y,
 			self.center.z
 		)
+
+
+	def point2angle(self, point:GPoint) -> float:
+		"""Given a point, return the angle between the ring center and that
+		point in degrees."""
+		return degrees(atan2(point.y - self.center.y, point.x - self.center.x))
 
 
 	def gcode_move(self):
