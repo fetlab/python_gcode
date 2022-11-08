@@ -138,6 +138,8 @@ class Ring:
 		dir_mul = -1 if ((dist+360)%360 < 180) else 1  #Determine CW/CCW rotation
 		extrude = self.rot_mul * dist * dir_mul
 
+		if extrude < 1: return []
+
 		gc = ([
 			GCLine(code='T1', comment='Switch to ring extruder', fake=True),
 			GCLine(code='M82', comment='Set relative extrusion mode', fake=True),
