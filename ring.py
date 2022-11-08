@@ -26,17 +26,8 @@ class Ring:
 		self.center        = GPoint(radius, 0, 0) if center is None else GPoint(center).copy()
 		self.geometry      = Circle(self.center, Vector.z_unit_vector(), self.radius, n=100)
 
-		#Defaults for rotating gear
-		steps_per_rotation  = 200 * 16   #For the stepper motor; 16 microsteps
-		motor_gear_teeth    = 30
-		ring_gear_teeth     = 125
-
 		#Set to -1 if positive E commands make the ring go clockwise
 		self.rot_mul        = 1  # 1 since positive steps make it go CCW
-
-		#How many motor steps per degree?
-		self.esteps_degree = int(
-			steps_per_rotation * ring_gear_teeth / motor_gear_teeth / 360)
 
 		rprint(f"Ring created: {self}")
 

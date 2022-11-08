@@ -5,7 +5,6 @@ from functools    import wraps, reduce
 from operator     import itemgetter
 from pathlib      import Path
 
-Point3 = namedtuple('Point3', 'x y z')
 #Create Number type
 Number = float|int
 
@@ -68,6 +67,7 @@ def attrhelper(attr, after=None):
 		return rgetattr(self, attr)
 
 	return {'fget': get_any, 'fset': set_any}
+
 
 def sign(n):
 	return -1 if n < 0 else (1 if n > 0 else 0)
@@ -226,7 +226,6 @@ class Saver:
 
 	def __exit__(self, exc_type, value, tb):
 		from threader import rprint
-		rprint(f'--- Saver exit: {self}\n---')
 		if exc_type is not None:
 			return False
 		for var,oldval in self.saved.items():

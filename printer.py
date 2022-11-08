@@ -81,50 +81,9 @@ class Printer:
 			#self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
 
 
-
-
 	def freeze_state(self):
 		"""Return a copy of this Printer object, capturing the state."""
 		return deepcopy(self)
-
-
-	def gcode(self, lines) -> List:
-		"""Return gcode. lines is a list of GCLines involved in the current step.
-		Use them to generate gcode for the ring to maintain the thread
-		trajectory."""
-		gc = []
-
-		#Variables to be restored, in the order they should be restored
-		save_vars = 'extruder_no', 'extrusion_mode'
-
-		#"Execute" each line of gcode. If a line is a xymove, Printer.attr_changed()
-		# will be called, which in turn will assign a new relative location to the
-		# Ring, then call Printer.thread_intersect to move the ring to maintain the
-		# intersection between the thread and the target.
-		for line in lines:
-			self.execute_gcode(line)
-			gc.append(line)
-
-			if line.is_xymove():
-				newlines = []
-				with Saver(self, save_vars) as saver:
-					for rline in self.ring.gcode_move():
-						self.execute_gcode(rline)
-						newlines.append(rline)
-
-				#Restore extruder state if it was changed
-				for var in save_vars:
-					if var in saver.changed:
-						self.execute_gcode(saver.saved[var])
-						newlines.append(saver.saved[var])
-
-				#Manufacture bogus fractional line numbers for display
-				for i,l in enumerate(newlines):
-					l.lineno = line.lineno + (i+1)/len(newlines)
-
-				gc.extend(newlines)
-
-		return gc
 
 
 	def execute_gcode(self, gcline:GCLine):
