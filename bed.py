@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from geometry import GPoint
 from plot_helpers import update_figure
 
@@ -11,7 +12,7 @@ class Bed:
 						 },
 	}
 
-	def __init__(self, anchor=(0, 0, 0), size=(220, 220)):
+	def __init__(self, anchor:Sequence=(0, 0, 0), size:Sequence=(220, 220)):
 		"""Anchor is where the thread is initially anchored on the bed. Size is the
 		size of the bed. Both are in mm."""
 		self.anchor = GPoint(*anchor)

@@ -6,6 +6,8 @@ from operator     import itemgetter
 from pathlib      import Path
 
 Point3 = namedtuple('Point3', 'x y z')
+#Create Number type
+Number = float|int
 
 def unprinted(iterable):
 	return set(filter(lambda s:not s.printed, iterable))

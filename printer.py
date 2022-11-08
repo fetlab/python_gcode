@@ -7,7 +7,7 @@ from math import degrees, atan2
 import plotly.graph_objects as go
 from plot_helpers import segs_xy, update_figure
 
-from util import attrhelper, Saver, GCodeException
+from util import attrhelper, Saver, GCodeException, Number
 from geometry import GPoint, GSegment, GHalfLine
 from geometry.utils import eq2d
 from gcline import GCLine
