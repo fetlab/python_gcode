@@ -220,6 +220,7 @@ class Saver:
 		self.saved = {v: getattr(obj, v) for v in save_vars}
 		self.obj = obj
 		self.changed = {}
+		from threader import rprint
 
 	def __enter__(self):
 		return self
@@ -235,5 +236,5 @@ class Saver:
 
 	def __repr__(self):
 		return('\n'.join([
-				f'{var}: {val} -> {self.changed.get(var, "")}'
-				for var,val in self.saved.items()]))
+				f'{var}: {self.saved[var]} -> {val}'
+				for var,val in self.changed.items()]))
