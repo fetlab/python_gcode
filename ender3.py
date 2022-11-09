@@ -58,7 +58,7 @@ from geometry import GPoint, GSegment
 from Geometry3D import Vector
 from gcline import GCLine
 from typing import TypedDict
-from util import Number
+from util import Number, Saver
 
 # --- Ring gearing ---
 steps_per_rotation = 200 * 16   #For the stepper motor; 16 microsteps
@@ -116,6 +116,7 @@ class Ender3(Printer):
 
 	def execute_gcode(self, gcline:GCLine) -> list:
 		#If the bed moves, we need to update the ring angle to track it
+		lines = [gcline]
 		if gcline.is_xymove():
 			self.x = gcline.args['X']
 			self.y = gcline.args['Y']
@@ -124,7 +125,17 @@ class Ender3(Printer):
 			angle = self.ring.point2angle(isecs[-1])
 			if angle != self.ring.angle:
 				self.ring.angle = angle
-				return self.ring.gcode_move() + [gcline]
-			return [gcline]
 
-		return super().execute_gcode(gcline)
+				save_vars = 'extruder_no', 'extrusion_mode'
+				with Saver(self, save_vars) as saver:
+					for rline in self.ring.gcode_move():
+						if any(rline == saver.saved[var] for var in save_vars):
+							continue
+						lines.extend(super().execute_gcode(rline))
+
+				#Restore extruder state if it was changed
+				for var in saver.changed:
+					super().execute_gcode(saver.saved[var])
+					lines.append(saver.saved[var])
+
+		return lines

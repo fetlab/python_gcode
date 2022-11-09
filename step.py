@@ -69,10 +69,9 @@ class Step:
 						newlines.append(rline)
 
 				#Restore extruder state if it was changed
-				for var in save_vars:
-					if var in saver.changed:
-						self.printer.execute_gcode(saver.saved[var])
-						newlines.append(saver.saved[var])
+				for var in saver.changed:
+					self.printer.execute_gcode(saver.saved[var])
+					newlines.append(saver.saved[var])
 
 				gcode.extend(newlines)
 
@@ -118,18 +117,19 @@ class Step:
 			if l1.is_xymove() and not l1.is_xyextrude():
 				gcode.extend(self.printer.execute_gcode(l1))
 
-			line_diff = l2.lineno - gcode[-1].lineno if gcode else float('inf')
-			if line_diff > 0:
-				if line_diff > 1:
-					new_line = self.layer.lines[:l2.lineno].end().as_xymove()
-					new_line.fake = True
-					if gcode:
-						new_line.comment = f'---- Skipped {gcode[-1].lineno+1}–{l2.lineno-1}; fake move from {new_line.lineno}'
-					else:
-						new_line.comment = f'---- Fake move from {new_line.lineno}'
-					new_line.lineno = ''
-					gcode.extend(self.printer.execute_gcode(new_line))
-				gcode.extend(self.printer.execute_gcode(l2))
+			if gcode and not gcode[-1].fake:
+				line_diff = l2.lineno - gcode[-1].lineno if gcode else float('inf')
+				if line_diff > 0:
+					if line_diff > 1:
+						new_line = self.layer.lines[:l2.lineno].end().as_xymove()
+						new_line.fake = True
+						if gcode:
+							new_line.comment = f'---- Skipped {gcode[-1].lineno+1}–{l2.lineno-1}; fake move from {new_line.lineno}'
+						else:
+							new_line.comment = f'---- Fake move from {new_line.lineno}'
+						new_line.lineno = ''
+						gcode.extend(self.printer.execute_gcode(new_line))
+					gcode.extend(self.printer.execute_gcode(l2))
 
 		return gcode
 
