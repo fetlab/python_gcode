@@ -129,7 +129,7 @@ class Ring:
 
 		gc = ([
 			GCLine(code='T1', comment='Switch to ring extruder', fake=True),
-			GCLine(code='M82', comment='Set relative extrusion mode', fake=True),
+			GCLine(code='M83', comment='Set relative extrusion mode', fake=True),
 			GCLine(code='G1', args={'E':round(extrude,3), 'F':8000},
 				comment=f'Ring move {dir_str} from {self.initial_angle:.2f}° to {self.angle:.2f}°', fake=True),
 		])
