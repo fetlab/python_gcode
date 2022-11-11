@@ -1,6 +1,7 @@
 from collections.abc import Sequence
 from geometry import GPoint
 from plot_helpers import update_figure
+from Geometry3D import Vector
 
 class Bed:
 	"""A class representing the print bed."""
@@ -27,13 +28,17 @@ class Bed:
 		return f'Bed({self.x}, {self.y}, ⚓︎{self.anchor})'
 
 
-	def plot(self, fig, style=None):
+	def plot(self, fig, style=None, offset:Vector=None):
+		x, y = self.x, self.y
+		if offset:
+			x += offset._v[0]
+			y += offset._v[1]
 		fig.add_shape(
 			name='bed',
 			type='rect',
-			xref='x',                 yref='y',
-			x0=self.x,                y0=self.y,
-			x1=self.x + self.size[0], y1=self.y + self.size[1],
+			xref='x',            yref='y',
+			x0=x,                y0=y,
+			x1=x + self.size[0], y1=y + self.size[1],
 			**self.style['bed'],
 		)
 		update_figure(fig, 'bed', style, what='shapes')

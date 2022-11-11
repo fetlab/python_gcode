@@ -120,7 +120,7 @@ def plot_steps(steps_obj, prev_layer:TLayer=None, stepnum=None,
 							 name='start anchor', marker_symbol='circle', marker_size=6)
 
 		#Plot the ring
-		step.printer.ring.plot(fig)
+		step.printer.ring.plot(fig)#, offset=Vector(ender3.bed_config['zero'], ender3.ring_config['zero']))
 
 		#Show the figure for this step
 		(x1,y1),(x2,y2) = layer.extents()

@@ -137,13 +137,15 @@ class Ring:
 		return gc
 
 
-	def plot(self, fig, style=None):
+	def plot(self, fig, style=None, offset:Vector=None):
+		center = self.center.copy()
+		if offset: center.move(offset)
 		fig.add_shape(
 			name='ring',
 			type='circle',
 			xref='x', yref='y',
-			x0=self.center.x-self.radius, y0=self.center.y-self.radius,
-			x1=self.center.x+self.radius, y1=self.center.y+self.radius,
+			x0=center.x-self.radius, y0=center.y-self.radius,
+			x1=center.x+self.radius, y1=center.y+self.radius,
 			**self.style['ring'],
 		)
 		update_figure(fig, 'ring', style, what='shapes')
@@ -152,6 +154,9 @@ class Ring:
 
 		c1 = self.carrier_location(offset=-ringwidth/2)
 		c2 = self.carrier_location(offset=ringwidth/2)
+		if offset:
+			c1.move(offset)
+			c2.move(offset)
 		fig.add_shape(
 			name='indicator',
 			type='line',
