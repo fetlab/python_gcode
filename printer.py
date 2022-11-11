@@ -86,7 +86,7 @@ class Printer:
 		return deepcopy(self)
 
 
-	def execute_gcode(self, gcline:GCLine) -> List:
+	def execute_gcode(self, gcline:GCLine) -> list[GCLine]:
 		"""Update the printer state according to the passed line of gcode. Return
 		the line of gcode for convenience. Assumes absolute coordinates."""
 		if gcline.code in ['M82', 'M83']:
