@@ -99,13 +99,6 @@ def plot_steps(steps_obj, prev_layer:TLayer=None, stepnum=None,
 		#Plot geometry printed in this step
 		plot_segments(fig, step.gcsegs, name='gcsegs', style=styles['gc_segs'])
 
-		#If there are debug intersection points, print them
-		if stepnum > 0  and hasattr(steps[stepnum-1].printer, 'debug_non_isecs'):
-			fig.add_trace(go.Scatter(
-				x=[p.x for p in steps[stepnum-1].printer.debug_non_isecs],
-				y=[p.y for p in steps[stepnum-1].printer.debug_non_isecs], mode='markers',
-				marker=dict(color='magenta', symbol='circle', size=8)))
-
 		#Print segments to avoid, if any
 		if avoid_seg := getattr(step.printer, 'debug_avoid'):
 			plot_segments(fig, avoid_seg, style=styles['avoid_segs'], name='avoid')

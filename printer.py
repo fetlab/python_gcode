@@ -39,8 +39,6 @@ class Printer:
 		self.extruder_no    = GCLine(code='T0',  args={}, comment='Switch to main extruder', fake=True)
 		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode', fake=True)
 
-		self.debug_non_isecs = []
-
 
 	#Create attributes which call Printer.attr_changed on change
 	x = property(**attrhelper('_x'))
@@ -111,7 +109,6 @@ class Printer:
 		while avoid:
 			repeats += 1
 			if repeats > 5: raise ValueError("Too many repeats")
-			self.debug_non_isecs = []
 			with steps.new_step(f"Move thread to avoid {len(avoid)} segments" + extra_message) as s:
 				s.debug_avoid = copy(avoid)
 				isecs = self.thread_avoid(avoid)
@@ -124,7 +121,6 @@ class Printer:
 					s.add(avoid)
 				if not isecs: break
 			avoid = isecs
-		self.debug_non_isecs = []
 
 
 	def thread_avoid(self, avoid: Collection[GSegment], move_ring=True, avoid_by=1) -> Set[GSegment]:
