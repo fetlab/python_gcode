@@ -73,53 +73,54 @@ rot_mul = 1  # 1 since positive steps make it go CCW
 esteps_per_degree = steps_per_rotation * ring_gear_teeth / motor_gear_teeth / 360
 
 
-# --- Actual measured parameters of the printer ---
+# --- Actual measured parameters of the printer, in the coordinate system of
+# the printer frame (see comments above) ---
 BedConfig = TypedDict('BedConfig', {'zero': GPoint, 'size': tuple[Number, Number]})
 RingConfig = TypedDict('RingConfig', {'zero': GPoint, 'radius': Number, 'esteps': Number, 'rot_mul': Number})
 
 bed_config: BedConfig = {
-			'zero': GPoint(-32.5, -65, 0),
-			'size': (77.5, 220),
-		}
+	'zero': GPoint(-32.5, -65, 0),
+	'size': (77.5, 220),
+}
 ring_config: RingConfig = {
-			'zero': GPoint(5, -37, 0),
-			'radius': 93,   #effective thread radius from thread carrier to ring center
-			'esteps': esteps_per_degree,
-			'rot_mul': 1,
-		}
+	'zero': GPoint(5, -37, 0),
+	'radius': 93,   #effective thread radius from thread carrier to ring center
+	'esteps': esteps_per_degree,
+	'rot_mul': 1,
+}
 
 
 
 class Ender3(Printer):
 	def __init__(self):
 		super().__init__(bed_config['size'], ring_config['radius'])
-		self.bed2ring = Vector(ring_config['zero'], bed_config['zero'])
+		self.ring2bed = Vector(ring_config['zero'], bed_config['zero'])
 
 	@property
-	def ring2bed(self): return -self.bed2ring
+	def bed2ring(self): return -self.ring2bed
 
 
 	def attr_changed(self, attr, old_value, new_value):
 		"""When the y coordinate of the printer changes, this means that the bed
 		has moved relative to the ring. Thus we update the vector that transforms a
-		bed coordinate into the coordinate system of the ring."""
+		ring coordinate into the coordinate system of the bed."""
 		if attr == '_y':
-			self.bed2ring = Vector(ring_config['zero'], bed_config['zero'].copy(y=new_value))
+			self.ring2bed = Vector(ring_config['zero'], bed_config['zero'].copy(y=new_value))
 
 
 	def anchor_to_ring(self) -> GSegment:
 		"""Return a GSegment in Bed coordinates that represents the path between
 		the current anchor and the ring."""
-		return GSegment(self.anchor, self.ring.point.moved(self.bed2ring), z=self.z)
+		return GSegment(self.anchor, self.ring.point.moved(self.ring2bed), z=self.z)
 
 
 
-	def execute_gcode(self, gcline:GCLine) -> list:
+	def execute_gcode(self, gcline:GCLine) -> list[GCLine]:
 		#If the bed moves, we need to update the ring angle to track it
-		lines = [gcline]
-		if gcline.is_xymove():
+		lines: list[GCLine] = []
+		if gcline.is_xyextrude():
 			self.x = gcline.args['X']
-			self.y = gcline.args['Y']
+			self.y = gcline.args['Y']   #This triggers attr_changed, which will change the ring2bed vector
 			thread = self.anchor_to_ring()
 			isecs = self.ring.intersection(thread)
 			angle = self.ring.point2angle(isecs[-1])
@@ -132,10 +133,14 @@ class Ender3(Printer):
 						if any(rline == saver.saved[var] for var in save_vars):
 							continue
 						lines.extend(super().execute_gcode(rline))
+					if lines[-1].code == 'G1':
+						lines[-1].comment += f' for Y={self.y}'
 
 				#Restore extruder state if it was changed
 				for var in saver.changed:
 					super().execute_gcode(saver.saved[var])
 					lines.append(saver.saved[var])
 
+		#Put the input line of gcode last, so we execute it after we move the ring
+		lines.append(gcline)
 		return lines
