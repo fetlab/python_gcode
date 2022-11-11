@@ -3,15 +3,17 @@ from plot_helpers import segs_xy, plot_segments, plot_points, show_dark, styles
 from tlayer import TLayer
 from util import deep_update
 from geometry import GSegment
+from Geometry3D import Vector
+import ender3
 
 
 def plot_steps(steps_obj, prev_layer:TLayer=None, stepnum=None,
-							 prev_layer_only_outline=True, prevew_layer=True):
+							 prev_layer_only_outline=True, preview_layer=True):
 	#Default plotting style
 	steps       = steps_obj.steps
 	layer       = steps_obj.layer
 
-	if prevew_layer:
+	if preview_layer:
 		step = steps[0]
 		print(f'Preview of {len(steps)} steps for layer {step.layer.layernum}')
 		fig = go.Figure()
