@@ -48,8 +48,7 @@ class Steps:
 		for i,step in enumerate(self.steps):
 			g = step.gcode(include_start=not any([isinstance(l.lineno, int) for l in r]))
 
-			if not g:
-				continue
+			if not g: continue
 
 			#--- Fill in any fake moves we need between steps ---
 			#Find the first "real" extruding move in this step, if any
@@ -63,9 +62,9 @@ class Steps:
 					new_line.fake = True
 					new_line.lineno = ''
 					g.append(new_line)
-					rprint(f'  new step line: {new_line}')
+					# rprint(f'  new step line: {new_line}')
 
-			#Put the step-delimiter comment first; do it last to prevent issues
+			#Put the step-delimiter comment first in the list; do it last to prevent issues
 			g.insert(0, GCLine(#lineno=r[-1].lineno+.5 if r else 0.5,
 				fake=True,
 				comment=f'Step {step.number} ({len(g)} lines): {step.name} ---------------------------'))
