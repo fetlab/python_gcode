@@ -2,25 +2,13 @@ from typing import List
 from enum import Enum
 
 from geometry import GSegment, GPoint
+from gcline import GCLine
 from util import linf, Saver, unprinted
 from logger import rprint, rich_log
 import logging
 
-import plotly.graph_objects as go
-from plot_helpers import update_figure, plot_segments
-
 
 class Step:
-	#Default plotting style
-	style: dict[str, dict] = {
-		'gc_segs':    {'mode':'lines', 'line': dict(color='green',  width=2)},
-		'thread':     {'mode':'lines', 'line': dict(color='yellow', width=1, dash='dot')},
-		'old_segs':   {'line': dict(color= 'gray', width=1)},
-		'old_thread': {'line_color': 'blue'},
-		'old_layer':  {'line': dict(color='gray', dash='dot', width=.5)},
-		'all_thread': {'line': dict(color='cyan', dash='dot', width=.5)},
-	}
-
 	def __init__(self, steps_obj, name='', debug=True, debug_plot=False):
 		self.name       = name
 		self.debug      = debug
@@ -50,7 +38,7 @@ class Step:
 		self.gcsegs is made of GSegment objects, each of which should have a .gc_line1
 		and .gc_line2 member which are GCLines.
 		"""
-		rprint(f'[red]————— START STEP {self.number}: {self.name} —————')
+		# rprint(f'[red]————— START STEP {self.number}: {self.name} —————')
 
 		gcode = []
 
@@ -62,11 +50,10 @@ class Step:
 				# ring moves.
 				save_vars = 'extruder_no', 'extrusion_mode'
 
-				newlines = []
+				newlines:list[GCLine] = []
 				with Saver(self.printer, save_vars) as saver:
 					for rline in self.printer.ring.gcode_move():
-						self.printer.execute_gcode(rline)
-						newlines.append(rline)
+						newlines.extend(self.printer.execute_gcode(rline))
 
 				#Restore extruder state if it was changed
 				for var in saver.changed:
@@ -155,35 +142,3 @@ class Step:
 			return False
 		#Tell parent Steps object we exited
 		self.steps_obj.step_exited(self)
-
-
-	def plot_gcsegments(self, fig, gcsegs=None, style=None):
-		plot_segments(fig,
-									gcsegs if gcsegs is not None else self.gcsegs,
-									style=self.style['gc_segs'])
-		update_figure(fig, 'gc_segs', style)
-		return
-
-
-		#Plot gcode segments. The 'None' makes a break in a line so we can use
-		# just one add_trace() call.
-		segs = {'x': [], 'y': []}
-		segs_to_plot = gcsegs if gcsegs is not None else self.gcsegs
-		for seg in segs_to_plot:
-			segs['x'].extend([seg.start_point.x, seg.end_point.x, None])
-			segs['y'].extend([seg.start_point.y, seg.end_point.y, None])
-		fig.add_trace(go.Scatter(**segs, name='gc_segs', **self.style['gc_segs']))
-		update_figure(fig, 'gc_segs', style)
-
-
-	def plot_thread(self, fig, start:GPoint, style=None):
-		#Plot a thread segment, starting at 'start', ending at the current anchor
-		if start == self.printer.anchor:
-			return
-		fig.add_trace(go.Scatter(
-			x=[start.x, self.printer.anchor.x],
-			y=[start.y, self.printer.anchor.y],
-			**self.style['thread'],
-		))
-		update_figure(fig, 'thread', style)
-
