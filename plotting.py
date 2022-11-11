@@ -74,15 +74,6 @@ def plot_steps(steps_obj, prev_layer:TLayer=None, stepnum=None,
 		#Plot segments to be printed this layer
 		plot_segments(fig, layer.geometry.segments, style=styles['to_print'])
 
-		#Plot the entire thread path that will be routed this layer
-		# if hasattr(layer, 'snapped_thread'):
-		# 	plot_segments(fig, layer.snapped_thread, name='snapped thread', style=styles['all_thread'])
-
-		##Plot the thread from the bed anchor or the layer anchor to the first
-		## step's anchor
-		#steps[0].plot_thread(fig,
-		#	getattr(layer, 'start_anchor', steps[0].printer.bed.anchor))
-
 		#Plot any geometry that was printed in the previous step
 		if stepnum > 0:
 			segs = set.union(*[set(s.gcsegs) for s in steps[:stepnum]])
