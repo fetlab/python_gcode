@@ -37,7 +37,7 @@ class Printer:
 
 		#Default states
 		self.extruder_no    = GCLine(code='T0',  args={}, comment='Switch to main extruder', fake=True)
-		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set relative extrusion mode', fake=True)
+		self.extrusion_mode = GCLine(code='M82', args={}, comment='Set absolute extrusion mode', fake=True)
 
 
 	#Create attributes which call Printer.attr_changed on change
