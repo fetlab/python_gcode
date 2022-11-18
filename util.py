@@ -77,7 +77,7 @@ def	linf(frame=0):
 	"""Return a string of information about the calling line in the file, or
 	frame number of frames previous."""
 	_, fn, ln, func, ctx, _ = inspect.stack()[frame+1]
-	return f'[{Path(fn).stem}' + ('' if func == '<module>' else f'.{func}') + f':{ln}]'
+	return '[' + Path(fn).stem + ('' if func == '<module>' else f'.{func}') + f':{ln}]'
 
 
 def construct_lines_rel2abs(gc_lines, start=0):
@@ -235,6 +235,9 @@ class Saver:
 				self.changed[var] = newval
 
 	def __repr__(self):
-		return('\n'.join([
-				f'{var}: {self.saved[var]} -> {val}'
-				for var,val in self.changed.items()]))
+		return('Saver:\n\tChanged:' + '\n'.join([
+				f'\t\t{var}: {self.saved[var]} -> {val}'
+				for var,val in self.changed.items()]) + '\n\tUnchanged:\n' +
+				 '\n'.join([f'\t\t{var}: {self.saved[var]}' for var in self.saved if var
+								not in self.changed])
+			)
