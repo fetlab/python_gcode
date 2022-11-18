@@ -1,5 +1,4 @@
-from typing import List
-from enum import Enum
+from copy import deepcopy
 
 from geometry import GSegment, GPoint
 from gcline import GCLine
@@ -16,7 +15,7 @@ class Step:
 		self.steps_obj  = steps_obj
 		self.printer    = steps_obj.printer
 		self.layer      = steps_obj.layer
-		self.gcsegs:List[GSegment] = []
+		self.gcsegs:list[GSegment] = []
 		self.number     = -1
 		self.caller     = linf(2)
 		self.valid      = True
@@ -29,7 +28,7 @@ class Step:
 					 f'[light_sea_green italic]{self.name}[/]>')
 
 
-	def gcode(self, include_start=False) -> List:
+	def gcode(self, include_start=False) -> list:
 		"""Render the gcode involved in this Step, returning a list of GCLines:
 			* Sort added gcode lines by line number. If there are breaks in line
 				number, check whether the represented head position also has a break.
@@ -67,27 +66,7 @@ class Step:
 		#Sort gcsegs by the first gcode line number in each
 		self.gcsegs.sort(key=lambda s:s.gc_lines.first.lineno)
 
-		"""
-		Conditions:
-			In a 2-line Segment:
-				If the first line is an Extrude:
-					SKIP
-				If the first line is an XY move:
-					SAVE
-				The second line is always an Extrude. Do:
-					If the previous saved line number is 1 less:
-						SAVE
-					else:
-						create and SAVE a FAKE
-						SAVE this line
-
-			In a > 2-line Segment, there is always one or more X/Y Move lines, but
-				only ever one Extrude line, which is always the last line.
-			SAVE every line
-		"""
-
-		actions = Enum('Actions', 'SKIP SAVE FAKE_SAVE FAKE_SKIP')
-		for i, seg in enumerate(self.gcsegs):
+		for seg in self.gcsegs:
 
 			#In a > 2-line Segment, there is always one or more X/Y Move
 			# lines, but only ever one Extrude line, which is always the last line.
@@ -101,27 +80,17 @@ class Step:
 			#For 2-line Segments
 			l1, l2 = seg.gc_lines.data
 
-			if l1.is_xymove() and not l1.is_xyextrude():
-				gcode.extend(self.printer.execute_gcode(l1))
-
-			if gcode and not gcode[-1].fake:
-				line_diff = l2.lineno - gcode[-1].lineno if gcode else float('inf')
-				if line_diff > 0:
-					if line_diff > 1:
-						new_line = self.layer.lines[:l2.lineno].end().as_xymove()
-						new_line.fake = True
-						if gcode:
-							new_line.comment = f'---- Skipped {gcode[-1].lineno+1}–{l2.lineno-1}; fake move from {new_line.lineno}'
-						else:
-							new_line.comment = f'---- Fake move from {new_line.lineno}'
-						new_line.lineno = ''
-						gcode.extend(self.printer.execute_gcode(new_line))
-					gcode.extend(self.printer.execute_gcode(l2))
+			#The first line should never execute an extrusion move, but we might need
+			# to use its coordinates to position the print head in the right place.
+			if l1.is_xymove() and self.printer.xy != l1.xy:
+				move_lines = self.printer.execute_gcode(l1.as_xymove(fake=True))
+				gcode.extend(move_lines)
+			gcode.extend(self.printer.execute_gcode(l2))
 
 		return gcode
 
 
-	def add(self, gcsegs:List[GSegment]):
+	def add(self, gcsegs:list[GSegment]):
 		rprint(f'Adding {len(unprinted(gcsegs))}/{len(gcsegs)} unprinted gcsegs to Step')
 		for seg in unprinted(gcsegs):
 			self.gcsegs.append(seg)
@@ -135,7 +104,7 @@ class Step:
 
 	def __exit__(self, exc_type, value, traceback):
 		if self.debug is False: rich_log.setLevel(logging.DEBUG)
-		self.printer = self.printer.freeze_state()
+		self.printer = deepcopy(self.printer)
 		#Die if there's an exception
 		if exc_type is not None:
 			print(f'Exception on Step.__exit__: {exc_type}')
