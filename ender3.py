@@ -54,6 +54,8 @@ Transforms to provide:
 """
 
 from printer import Printer
+from bed import Bed
+from ring import Ring
 from geometry import GPoint, GSegment
 from Geometry3D import Vector
 from gcline import GCLine
@@ -89,58 +91,63 @@ ring_config: RingConfig = {
 	'rot_mul': 1,
 }
 
+#Move the zero points so the bed zero is actually 0,0
+ring_config['zero'] -= bed_config['zero']
+bed_config ['zero'] -= bed_config['zero']
 
 
 class Ender3(Printer):
 	def __init__(self):
-		super().__init__(bed_config['size'], ring_config['radius'])
-		self.ring2bed = Vector(ring_config['zero'], bed_config['zero'])
+		bed = Bed(size=bed_config['size'])
+		ring = Ring(radius=ring_config['radius'], center=ring_config['zero'])
+		super().__init__(bed, ring)
+		# self.ring2bed = Vector(ring_config['zero'], bed_config['zero'])
 
-	@property
-	def bed2ring(self): return -self.ring2bed
-
-
-	def attr_changed(self, attr, old_value, new_value):
-		"""When the y coordinate of the printer changes, this means that the bed
-		has moved relative to the ring. Thus we update the vector that transforms a
-		ring coordinate into the coordinate system of the bed."""
-		if attr == '_y':
-			self.ring2bed = Vector(ring_config['zero'], bed_config['zero'].copy(y=new_value))
+	# @property
+	# def bed2ring(self): return -self.ring2bed
 
 
-	def anchor_to_ring(self) -> GSegment:
-		"""Return a GSegment in Bed coordinates that represents the path between
-		the current anchor and the ring."""
-		return GSegment(self.anchor, self.ring.point.moved(self.ring2bed), z=self.z)
+	# def attr_changed(self, attr, old_value, new_value):
+	# 	"""When the y coordinate of the printer changes, this means that the bed
+	# 	has moved relative to the ring. Thus we update the vector that transforms a
+	# 	ring coordinate into the coordinate system of the bed."""
+	# 	if attr == '_y':
+	# 		self.ring2bed = Vector(ring_config['zero'], bed_config['zero'].copy(y=new_value))
+
+
+	# def anchor_to_ring(self) -> GSegment:
+	# 	"""Return a GSegment in Bed coordinates that represents the path between
+	# 	the current anchor and the ring."""
+	# 	return GSegment(self.anchor, self.ring.point.moved(self.ring2bed), z=self.z)
 
 
 
-	def execute_gcode(self, gcline:GCLine) -> list[GCLine]:
-		#If the bed moves, we need to update the ring angle to track it
-		lines: list[GCLine] = []
-		if gcline.is_xyextrude():
-			self.x = gcline.args['X']
-			self.y = gcline.args['Y']   #This triggers attr_changed, which will change the ring2bed vector
-			thread = self.anchor_to_ring()
-			isecs = self.ring.intersection(thread)
-			angle = self.ring.point2angle(isecs[-1])
-			if angle != self.ring.angle:
-				self.ring.angle = angle
+	#def execute_gcode(self, gcline:GCLine) -> list[GCLine]:
+	#	#If the bed moves, we need to update the ring angle to track it
+	#	lines: list[GCLine] = []
+	#	if gcline.is_xyextrude():
+	#		self.x = gcline.args['X']
+	#		self.y = gcline.args['Y']   #This triggers attr_changed, which will change the ring2bed vector
+	#		thread = self.anchor_to_ring()  #Thread to current carrier location in *new* bed coords
+	#		isecs = self.ring.intersection(thread)
+	#		angle = self.ring.point2angle(isecs[-1].moved(self.bed2ring))
+	#		if angle != self.ring.angle:
+	#			self.ring.angle = angle
 
-				save_vars = 'extruder_no', 'extrusion_mode'
-				with Saver(self, save_vars) as saver:
-					for rline in self.ring.gcode_move():
-						if any(rline == saver.saved[var] for var in save_vars):
-							continue
-						lines.extend(super().execute_gcode(rline))
-					if lines[-1].code == 'G1':
-						lines[-1].comment += f' for Y={self.y}'
+	#			save_vars = 'extruder_no', 'extrusion_mode'
+	#			with Saver(self, save_vars) as saver:
+	#				for rline in self.ring.gcode_move():
+	#					if any(rline == saver.saved[var] for var in save_vars):
+	#						continue
+	#					lines.extend(super().execute_gcode(rline))
+	#				if lines and lines[-1].code == 'G1':
+	#					lines[-1].comment += f' for Y={self.y}'
 
-				#Restore extruder state if it was changed
-				for var in saver.changed:
-					super().execute_gcode(saver.saved[var])
-					lines.append(saver.saved[var])
+	#			#Restore extruder state if it was changed
+	#			for var in saver.changed:
+	#				super().execute_gcode(saver.saved[var])
+	#				lines.append(saver.saved[var])
 
-		#Put the input line of gcode last, so we execute it after we move the ring
-		lines.append(gcline)
-		return lines
+	#	#Put the input line of gcode last, so we execute it after we move the ring
+	#	lines.append(gcline)
+	#	return lines
