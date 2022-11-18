@@ -22,8 +22,6 @@ class TLayer(Cura4Layer):
 		self.layer_height = layer_height
 		self.model_isecs  = {}
 		self.in_out       = []
-		self.preamble     = []
-		self.postamble    = []
 
 
 	def plot(self, fig=None, plot3d=False, only_outline=True, show=False,
