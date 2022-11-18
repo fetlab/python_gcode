@@ -29,14 +29,13 @@ class Ring:
 		#Set to -1 if positive E commands make the ring go clockwise
 		self.rot_mul        = 1  # 1 since positive steps make it go CCW
 
-		rprint(f"Ring created: {self}")
-
 	x = property(**attrhelper('center.x'))
 	z = property(**attrhelper('center.z'))
 
 
 	def __repr__(self):
-		return f'Ring(⌀{self.radius*2}, {self._angle:.2f}°, ⊙{self.center})'
+		return f'Ring({self._angle:.2f}°, ⌀{self.radius*2}, ⊙{self.center})'
+
 
 	@property
 	def y(self): return self.center.y
@@ -59,8 +58,9 @@ class Ring:
 
 
 	@angle.setter
-	def angle(self, new_pos):
-		self.set_angle(new_pos)
+	def angle(self, new_angle):
+		self.initial_angle = self._angle
+		self._angle = new_angle
 
 
 	@property
@@ -81,13 +81,6 @@ class Ring:
 		return sorted(isecs, key=lambda p: hl.point.distance(p))
 
 
-	def set_angle(self, new_angle):
-		"""Set a new angle for the ring. Optionally provide a preferred movement
-		direction as 'CW' or 'CCW'; if None, it will be automatically determined."""
-		self.initial_angle = self._angle
-		self._angle = new_angle
-
-
 	def carrier_location(self, offset=0):
 		"""Used in plotting."""
 		return GPoint(
@@ -99,9 +92,7 @@ class Ring:
 
 	def angle2point(self, angle):
 		"""Return an x,y,z=0 location on the ring based on the given angle, without
-		moving the ring. Assumes that the bed's bottom-left corner is (0,0).
-		Doesn't take into account a machine that uses bed movement for the y-axis,
-		but just add the y value to the return from this function."""
+		moving the ring."""
 		return GPoint(
 			cos(radians(angle)) * self.radius + self.center.x,
 			sin(radians(angle)) * self.radius + self.center.y,
