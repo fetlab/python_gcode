@@ -234,8 +234,15 @@ def gcode2segments(lines:GCLines, z, keep_moves_with_extrusions=True):
 	segments = []
 
 	#Put all beginning non-extrusion lines into preamble
-	while lines and not lines.first.is_xymove():
+	while lines and not lines.first.is_xyextrude():
 		preamble.append(lines.popidx(0))
+
+	#Put back lines from the end until we get an xymove
+	putback = []
+	while preamble and not preamble.last.is_xymove():
+		putback.append(preamble.popidx(-1))
+	if preamble.last.is_xymove(): putback.append(preamble.popidx(-1))
+	if putback: lines = list(reversed(putback)) + lines
 
 	#Put the first xymove as the "last" item
 	last = lines.popidx(0)
