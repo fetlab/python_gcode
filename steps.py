@@ -42,13 +42,23 @@ class Steps:
 			del(self.steps[-1])
 
 
-	def gcode(self):
+	def gcode(self) -> List[GCLine]:
 		"""Return the gcode for all steps."""
-		r: List[GCLine] = []
-		for i,step in enumerate(self.steps):
-			g = step.gcode(include_start=not any([isinstance(l.lineno, int) for l in r]))
+		r: List[GCLine] = self.layer.preamble.data.copy()
 
-			if not g: continue
+		ring_angle = self.steps[0].printer.ring.angle
+
+		for i,step in enumerate(self.steps):
+			step.printer.ring.initial_angle = ring_angle
+
+			g = step.gcode()
+
+			ring_angle = step.printer.ring.angle
+
+			if not g:
+				r.append(GCLine(fake=True,
+					comment=f'Step {step.number} ({len(g)} lines): {step.name} ---------------------------'))
+				continue
 
 			#--- Fill in any fake moves we need between steps ---
 			#Find the first "real" extruding move in this step, if any
@@ -74,6 +84,7 @@ class Steps:
 		#Finally add any extra attached to the layer
 		if r:
 			r.append(GCLine(fake=True, comment='Layer postamble ------'))
+
 		r.extend(self.layer.postamble)
 
 		return r
