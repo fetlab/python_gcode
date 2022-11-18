@@ -1,6 +1,7 @@
 import re
-from gcline import GCLine
+from gcline import GCLine, GCLines
 from util import listsplit
+from more_itertools import peekable
 
 class GCodeException(Exception):
 	def __init__(self, obj, message):
@@ -63,38 +64,38 @@ def parse(gcobj):
 
 	gcobj.lines = glines.copy()
 
-	#Extract the preamble and postamble
-	preamble, glines = listsplit(glines, lambda l: l.line.startswith(';LAYER:0'),
+	#Extract the file preamble and postamble
+	file_preamble, glines = listsplit(glines, lambda l: l.line.startswith(';LAYER:0'),
 			maxsplit=1, keepsep='>')
-	postamble, glines = listsplit(reversed(glines), lambda l: l.line.startswith(';TIME_ELAPSED'),
+	file_postamble, glines = listsplit(reversed(glines), lambda l: l.line.startswith(';TIME_ELAPSED'),
 			maxsplit=1, keepsep='>')
-	postamble.reverse()
+	file_postamble.reverse()
 	glines.reverse()
 
 	#Split on lines containing 'Z' to separate layers, since the ';LAYER' comment
 	# happens after a Z move.
-	layergroups = listsplit(glines, lambda l: 'Z' in l.line, keepsep='>')
+	layers = listsplit(glines, lambda l: 'Z' in l.line, keepsep='>')
 
 	#The first group will probably be a bogus layer due to an early Z, so add it
 	# to the preamble
-	preamble.extend(layergroups.pop(0))
+	file_preamble.extend(layers.pop(0))
 
-	layergroups = [layer_class(g) for g in layergroups]
+	layers = [layer_class(g) for g in layers]
 
 	#Manually set number of layer 0 because the ';LAYER' comment is now attached
 	# to the preamble
-	layergroups[0].layernum = 0
+	layers[0].layernum = 0
 
 	#Add layer height to each layer if we can find the layer height from the preamble comment
 	m = next(filter(None, [re.search('Layer height:\s+(\d+\.\d+)', l.line, re.I)
-		for l in preamble]))
+		for l in file_preamble]))
 	if m:
 		layer_height = float(m.group(1))
-		for layer in layergroups:
+		for layer in layers:
 			layer.layer_height = layer_height
 
 	#Find the layer number in each group of lines
-	for i,layer in enumerate(layergroups[1:]):
+	for i,layer in enumerate(layers[1:]):
 		try:
 			layer.layernum = int(next(filter(
 				lambda l: l.line.startswith(';LAYER'), layer.lines)).line.split(':')[1])
@@ -104,7 +105,7 @@ def parse(gcobj):
 
 	#For each layer, find the starting absolute extrusion value (the last
 	# extrusion in the previous layer)
-	for i,layer in enumerate(layergroups[1:]):
+	for i,layer in enumerate(layers[1:]):
 		try:
 			last_extrude_line = next(filter(GCLine.is_extrude, reversed(layer.lines)))
 		except:
@@ -112,17 +113,17 @@ def parse(gcobj):
 		else:
 			layer.last_extrude = last_extrude_line.args['E']
 
-	postamble = layer_class(postamble, layernum='postamble')
-	preamble  = layer_class(preamble, layernum='preamble')
-	preamble.info = {}
-	for line in preamble.lines:
+	file_postamble = layer_class(file_postamble, layernum='postamble')
+	file_preamble  = layer_class(file_preamble, layernum='preamble')
+	file_preamble.info = {}
+	for line in file_preamble.lines:
 		if line.line.startswith(';') and ':' in line.line:
 			key, val = line.line[1:].split(':', maxsplit=1)
-			preamble.info[key] = val
+			file_preamble.info[key] = val
 
-	gcobj.preamble  = preamble
-	gcobj.layers    = layergroups
-	gcobj.postamble = postamble
+	gcobj.preamble  = file_preamble
+	gcobj.layers    = layers
+	gcobj.postamble = file_postamble
 
 
 def parse_3mf(filename):
