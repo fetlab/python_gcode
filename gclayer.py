@@ -3,10 +3,11 @@ from gcline import GCLine, GCLines
 class Layer():
 	def __init__(self, lines=[], layernum=None):
 		self.layernum  = layernum
-		self.preamble  = []
+		self.preamble  = GCLines()
 		self.lines     = GCLines(lines)
-		self.postamble = []
+		self.postamble = GCLines()
 		self.has_moves = any(l for l in self.lines if 'X' in l.args and 'Y' in l.args)
+		self._z        = None
 
 	def __repr__(self):
 		#If this layer contains some X/Y moves, print the extents
@@ -68,13 +69,13 @@ class Layer():
 		"""Return the first Z height found for this layer. It should be
 		the only Z unless it's been messed with, so returning the first is
 		safe."""
-		try:
+		if self._z is not None:
 			return self._z
-		except AttributeError:
-			for l in self.lines:
-				if 'Z' in l.args:
-					self._z = l.args['Z']
-					return self._z
+
+		for l in self.preamble + self.lines + self.postamble:
+			if 'Z' in l.args:
+				self._z = l.args['Z']
+				return self._z
 
 
 	def set_preamble(self, gcodestr):
