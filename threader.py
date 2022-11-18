@@ -54,6 +54,7 @@ class Threader:
 		for steps_obj in self.layer_steps:
 			r.append(GCLine(fake=True, comment=f'==== Start layer {steps_obj.layer.layernum} ===='))
 			r.extend(steps_obj.gcode())
+			r.append(GCLine(fake=True, comment=f'====== End layer {steps_obj.layer.layernum} ===='))
 		return r
 
 
@@ -259,6 +260,7 @@ class Threader:
 
 					with steps.new_step(f'Move thread to overlap anchor at {anchor}') as s:
 						self.printer.thread_intersect(anchor)
+						rprint(f"Ring now at {self.printer.ring.angle:.2f}°")
 
 					#Find and print the segment that fixes the thread at the anchor point
 					anchorsegs = [seg for seg in unprinted(layer.geometry.segments) if anchor in seg]
