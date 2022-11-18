@@ -52,6 +52,12 @@ class GPoint(Point):
 	def __add__(self, other:GPoint): return self.moved(Vector(*other))
 	def __sub__(self, other:GPoint): return self.moved(Vector(*-other))
 
+	@property
+	def xy(self): return self.x, self.y
+
+	@property
+	def xyz(self): return self.x, self.y, self.z
+
 
 	def as2d(self):
 		"""Return a copy of this point with *z* set to 0. If z is already 0, return self."""
@@ -79,7 +85,7 @@ class GPoint(Point):
 
 	def moved(self, vec):
 		"""Return a copy of this point moved by vector vec."""
-		return self.copy().move(vec)
+		return GPoint(self.copy().move(vec))
 
 
 	def intersecting(self, check):
