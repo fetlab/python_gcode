@@ -1,8 +1,9 @@
-from math import atan2, pi
+from math import atan2, pi, sin, cos, radians
 from typing import Collection, List
 from more_itertools import first
 from Geometry3D import Point, Segment, Line, Vector, Plane, HalfLine
 from Geometry3D.utils import get_eps
+from .gpoint import GPoint
 
 eps = get_eps()
 
@@ -117,3 +118,9 @@ def distance_linelike_point(linelike, point):
 	aux_plane = Plane(point, vec)
 	foot = aux_plane.intersection(linelike)
 	return None if foot is None else point.distance(foot)
+
+
+def angle2point(angle, center:Point, radius) -> GPoint:
+	return GPoint(cos(radians(angle)) * radius + center.x,
+							 sin(radians(angle)) * radius + center.y,
+							 center.z)
