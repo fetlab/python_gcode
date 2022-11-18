@@ -87,11 +87,17 @@ class GCLine:
 		return self.is_xymove() and 'E' in self.args
 
 
-	def as_xymove(self):
+	def as_xymove(self, fake=False):
 		"""Return a copy of this line without extrusion, turning it into a G0."""
 		if not self.is_xymove():
 			raise ValueError(f'Call of as_xymove() on non-xymove GCLine {self}')
-		c = GCLine(self.construct(), lineno=self.lineno)
+		c = GCLine(self.construct())
+		if fake:
+			c.lineno = ''
+			c.fake = True
+			c.comment += ' (fake)'
+		else:
+			c.lineno = self.lineno
 		if 'E' in c.args:
 			del(c.args['E'])
 		c.code = 'G0'
@@ -269,7 +275,7 @@ class GCLines(UserList):
 		return self.data[-1]
 
 
-	def start(self, is_extrude=False) -> GCLine:
+	def start(self, is_extrude=False) -> GCLine|None:
 		"""Return the first X/Y (extruding) move in this group of GCLines or None
 		if no moves are present."""
 		#TODO: what's right with is_extrude=True? Return the start point of the
@@ -282,7 +288,7 @@ class GCLines(UserList):
 		return next(filter(test, self.data), None)
 
 
-	def end(self, is_extrude=False) -> GCLine:
+	def end(self, is_extrude=False) -> GCLine|None:
 		"""Return the last X/Y (extruding) move in this group of GCLines or None
 		if no moves are present."""
 		test = GCLine.is_xyextrude if is_extrude else GCLine.is_xymove
