@@ -1,4 +1,4 @@
-from copy import deepcopy, copy
+from copy import copy
 from typing import List, Collection, Set
 from itertools import groupby
 from more_itertools import flatten
@@ -28,10 +28,13 @@ class Printer:
 		'anchor': {'mode':'markers', 'marker': dict(color='red', symbol='x', size=4)},
 	}
 
-	def __init__(self, effective_bed_size:tuple[Number, Number], ring_radius:Number, z:Number=0):
+	def __init__(self, bed:Bed, ring:Ring, z:Number=0):
+							#effective_bed_size:tuple[Number, Number], ring_radius:Number, z:Number=0):
 		self._x, self._y, self._z = 0, 0, z
-		self.bed  = Bed(size=effective_bed_size)
-		self.ring = Ring(radius=ring_radius, center=GPoint(0, 0, z))
+		# self.bed  = Bed(size=effective_bed_size)
+		# self.ring = Ring(radius=ring_radius, center=GPoint(0, 0, z))
+		self.bed = bed
+		self.ring = ring
 
 		self.anchor = GPoint(self.bed.anchor[0], self.bed.anchor[1], z)
 
@@ -81,11 +84,6 @@ class Printer:
 			#self.thread_intersect(self.anchor, set_new_anchor=False, move_ring=True)
 
 
-	def freeze_state(self):
-		"""Return a copy of this Printer object, capturing the state."""
-		return deepcopy(self)
-
-
 	def execute_gcode(self, gcline:GCLine) -> list[GCLine]:
 		"""Update the printer state according to the passed line of gcode. Return
 		the line of gcode for convenience. Assumes absolute coordinates."""
@@ -112,8 +110,10 @@ class Printer:
 			with steps.new_step(f"Move thread to avoid {len(avoid)} segments" + extra_message) as s:
 				s.debug_avoid = copy(avoid)
 				isecs = self.thread_avoid(avoid)
-				rprint(f"{len(isecs)} intersections:", isecs)
-				if len(isecs) == 0: s.valid = False
+				rprint(f"{len(isecs)} intersections" + (f": {isecs}" if isecs else ""))
+				if len(isecs) == 0:
+					rprint("No intersections, don't need to move thread")
+					s.valid = False
 				if len(avoid) == 1: rprint('Was avoiding:', avoid, indent=2)
 				avoid -= isecs
 			if avoid:
@@ -169,17 +169,10 @@ class Printer:
 		target = target.as2d()
 		if target != anchor:
 			if isecs := self.ring.intersection(GHalfLine(anchor, target)):
-				ring_point = isecs[-1]
+				ring_angle = self.ring.point2angle(isecs[-1])
 
-				#Now we need the angle between center->ring and the x axis
-				ring_angle = self.ring.point2angle(ring_point)
-				degrees(atan2(ring_point.y - self.ring.center.y,
-																	 ring_point.x - self.ring.center.x))
-
-				if move_ring:
-					if self.ring.angle == ring_angle:
-						rprint(f'Ring already at {ring_angle} deg, not moving')
-					self.ring.set_angle(ring_angle)
+				if move_ring and self.ring.angle != ring_angle:
+					self.ring.angle = ring_angle
 
 		else:
 			#rprint('thread_intersect with target == anchor, doing nothing')
