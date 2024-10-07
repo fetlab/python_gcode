@@ -1,5 +1,5 @@
-from gcline import GCLine
-from util import listsplit
+from ..gcline import GCLine
+from ..util import listsplit
 
 __name__ = "prusa"
 

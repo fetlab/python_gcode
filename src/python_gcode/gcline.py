@@ -5,7 +5,7 @@ from fastcore.basics import ifnone
 from collections import UserList
 from gcode_geom import GPoint, GSegment
 from gcode_geom.angle import Angle
-from util import deep_update, ReadOnlyDict
+from .util import deep_update, ReadOnlyDict
 
 from rich.console import Console
 rprint = Console(style="on #272727").print

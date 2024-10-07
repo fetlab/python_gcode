@@ -6,9 +6,6 @@ from pathlib      import Path
 from collections.abc import Mapping
 from typing import Collection
 
-#Create Number type
-Number = float|int
-
 def unprinted(iterable):
 	return set(filter(lambda s:not s.printed, iterable))
 

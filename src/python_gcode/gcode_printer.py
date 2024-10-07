@@ -1,10 +1,9 @@
 from typing import Callable
 from fastcore.basics import listify
-
-from util import attrhelper
 from gcode_geom import GPoint, GSegment, GHalfLine
-from gcline import GCLine
-from gclayer import Layer
+from .util import attrhelper
+from .gcline import GCLine
+from .gclayer import Layer
 
 #Extruder mode constants
 E_ABS = 'absolute'

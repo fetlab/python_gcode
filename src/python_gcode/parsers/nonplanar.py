@@ -1,6 +1,6 @@
-from gcline import GCLine, GCLines
-from gcode_printer import GCodePrinter
-from gclayer import Layer
+from ..gcline import GCLine, GCLines
+from ..gcode_printer import GCodePrinter
+from ..gclayer import Layer
 
 def detect(lines):
 	return 'nonplanar' in lines[0].lower()

@@ -1,7 +1,7 @@
 import sys, warnings
-import parsers
-from gclayer import Layer
-from gcline import GCLine
+from . import parsers
+from .gclayer import Layer
+from .gcline import GCLine
 
 
 class GcodeFile:

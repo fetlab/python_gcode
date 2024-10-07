@@ -1,4 +1,4 @@
-from gcline import GCLine, GCLines
+from .gcline import GCLine, GCLines
 
 class Layer():
 	def __init__(self, lines=[], layernum=None, z=None):

@@ -1,7 +1,7 @@
 import re
-from gcline import GCLine
-from util import listsplit
-from gcode_printer import GCodePrinter
+from ..gcline import GCLine
+from ..util import listsplit
+from ..gcode_printer import GCodePrinter
 
 class GCodeException(Exception):
 	def __init__(self, obj, message):
