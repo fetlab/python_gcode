@@ -3,8 +3,9 @@ import pkgutil, importlib
 def get_parsers():
 	"""Return the list of available parser names. Makes sure the basic parser is
 	always last in the list."""
+	print(f'{__path__=}')
 	mods = [m.name for m in filter(
-		lambda m:m.name != 'basic', pkgutil.iter_modules([__name__]))]
+		lambda m:m.name != 'basic', pkgutil.iter_modules(__path__))]
 	mods.append('basic')
 	return mods
 
