@@ -3,8 +3,8 @@ import re
 from functools import total_ordering
 from fastcore.basics import ifnone
 from collections import UserList
-from geometry import GPoint, GSegment
-from geometry.angle import Angle
+from gcode_geom import GPoint, GSegment
+from gcode_geom.angle import Angle
 from util import deep_update, ReadOnlyDict
 
 from rich.console import Console

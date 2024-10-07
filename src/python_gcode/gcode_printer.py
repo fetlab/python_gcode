@@ -2,7 +2,7 @@ from typing import Callable
 from fastcore.basics import listify
 
 from util import attrhelper
-from geometry import GPoint, GSegment, GHalfLine
+from gcode_geom import GPoint, GSegment, GHalfLine
 from gcline import GCLine
 from gclayer import Layer
 
