@@ -9,12 +9,15 @@ dependencies = [
     "rich>=13.8.1",
 ]
 
+# Tell the build system to find packages under the 'src' directory
+packages = [{include = "python_gcode", from = "src"}]
+
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 
-[tool.ruff]
 [tool.ruff.lint]
 ignore = [
 	"E101",   #Mixed spaces & tabs
