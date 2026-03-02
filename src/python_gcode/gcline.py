@@ -33,8 +33,10 @@ class GCLine:
 			return
 
 		if ';' in line:
-			cmd, cmt = re.match(r'^(.*?)\s*;\s*(.*?)\s*$', line).groups()
-			if not self.comment: self.comment = cmt
+			cmd, cmt = line.split(';', maxsplit=1)
+			cmd = cmd.strip()
+			if not self.comment:
+				self.comment = cmt.strip()
 		else:
 			cmd = line
 
