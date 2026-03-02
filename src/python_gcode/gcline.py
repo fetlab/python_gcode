@@ -13,7 +13,7 @@ rprint = Console(style="on #272727").print
 #Use total_ordering to allow comparing based on line number
 @total_ordering
 class GCLine:
-	def __init__(self, line='', lineno='', code=None, args={}, comment=None, fake=False, meta=None):
+	def __init__(self, line='', lineno:int|str='', code=None, args={}, comment=None, fake=False, meta=None):
 		"""Parse a single line of gcode into its code and named
 		arguments."""
 		self.line    = line.strip()
