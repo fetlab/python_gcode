@@ -6,7 +6,7 @@ from .gcline import GCLine
 
 class GcodeFile:
 	def __init__(self, filename=None, filestring='', layer_class=Layer,
-			line_class=GCLine, parser=None):
+			layer_args=None, line_class=GCLine, parser=None):
 		"""Parse a file's worth of gcode."""
 		self.preamble_layer = Layer()
 		self.postamble_layer = Layer()
@@ -18,6 +18,7 @@ class GcodeFile:
 			self.filestring = open(filename).read()
 		self.filelines = self.filestring.split('\n')
 		self.layer_class = layer_class
+		self.layer_args  = layer_args
 		self.line_class  = line_class
 		self.parse(parser)
 

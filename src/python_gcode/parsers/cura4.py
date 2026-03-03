@@ -40,7 +40,7 @@ def detect(lines):
 
 
 #Convention is that preamble "layer" is -1, first print layer is 0
-def parse(gcobj):
+def parse(gcobj, layer_args=None):
 	"""Parse Cura4 Gcode into layers using the ;LAYER:N comment line."""
 	layer_class = gcobj.layer_class
 	gcprinter = GCodePrinter()
@@ -64,14 +64,14 @@ def parse(gcobj):
 	# to the preamble
 	file_preamble.extend(layers.pop(0))
 
-	layers = [layer_class(g) for g in layers]
+	layers = [layer_class(g, **(layer_args or {})) for g in layers]
 
 	#Manually set number of layer 0 because the ';LAYER' comment is now attached
 	# to the preamble
 	layers[0].layernum = 0
 
 	#Add layer height to each layer if we can find the layer height from the preamble comment
-	m = next(filter(None, [re.search('Layer height:\s+(\d+\.\d+)', l.line, re.I)
+	m = next(filter(None, [re.search(r'Layer height:\s+(\d+\.\d+)', l.line, re.I)
 		for l in file_preamble]))
 	if m:
 		layer_height = float(m.group(1))
